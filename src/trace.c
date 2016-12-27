@@ -187,6 +187,8 @@ static int trace_ext(void)
                 pt_comm_close(cfd, NULL);
                 printf("process detached\n");
             }
+
+            /* TODO 单独写两个if有特殊含义？ */
             
             if (ret == -2) {
                 DEINIT_RETURN(-2);
