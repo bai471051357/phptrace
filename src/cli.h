@@ -47,7 +47,7 @@ typedef struct {
 
     pt_filter_t pft;
 
-    struct _limit {
+    struct _limit { /* FIXME 这名字有啥意义？*/
         int frame;              /* frame limit */
         int request;            /* request limit */
     }limit;

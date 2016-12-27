@@ -569,6 +569,7 @@ PHP_FUNCTION(trace_set_filter)
 #endif
 
 /* check frame send flag */
+/* FIXME frame参数貌似完全没有用 */
 static int check_frame_send_flag(pt_frame_t *frame, zend_function *zf) 
 {
     int ret = 0;
@@ -1162,7 +1163,7 @@ static void handle_command(void)
                 break;
 
             case PT_MSG_DO_FILTER:
-                PTD("hanle DO_FILTER");
+                PTD("handle DO_FILTER");
                 pt_filter_dtr(&PTG(pft));
                 pt_filter_unpack_filter_msg(&(PTG(pft)), msg->data);
                 break;
@@ -1204,7 +1205,6 @@ ZEND_API void pt_execute_core(int internal, zend_execute_data *execute_data, zva
     zval retval;
 #endif
     pt_frame_t frame;
-    int send_frame = 0;
 
 #if PHP_VERSION_ID >= 70000
     if (execute_data->prev_execute_data) {
@@ -1232,17 +1232,19 @@ ZEND_API void pt_execute_core(int internal, zend_execute_data *execute_data, zva
      * recursion and sending on exit point will be affected. */
     dotrace = PTG(dotrace);
 
+    /* TODO 将filter的逻辑再往上提会不会更好？ */
+    if (check_frame_send_flag(zf) == -1) {
+        dotrace = 0;
+    }
+
     PTG(level)++;
 
     if (dotrace) {
 #if PHP_VERSION_ID < 50500
-        send_frame = frame_build(&frame, internal, PT_FRAME_ENTRY, caller, execute_data, op_array TSRMLS_CC);
+        frame_build(&frame, internal, PT_FRAME_ENTRY, caller, execute_data, op_array TSRMLS_CC);
 #else
-        send_frame = frame_build(&frame, internal, PT_FRAME_ENTRY, caller, execute_data, NULL TSRMLS_CC);
+        frame_build(&frame, internal, PT_FRAME_ENTRY, caller, execute_data, NULL TSRMLS_CC);
 #endif
-        if (send_frame != 0) {
-            goto exec_ori;  
-        }
 
         /* Register return value ptr */
 #if PHP_VERSION_ID < 70000
@@ -1268,8 +1270,6 @@ ZEND_API void pt_execute_core(int internal, zend_execute_data *execute_data, zva
         frame.inc_time = pt_time_usec();
     }
 
-
-exec_ori:
     /* Call original under zend_try. baitout will be called when exit(), error
      * occurs, exception thrown and etc, so we have to catch it and free our
      * resources. */
@@ -1311,7 +1311,7 @@ exec_ori:
          * send message. */
     } zend_end_try();
 
-    if (dotrace && send_frame == 0) {
+    if (dotrace) {
         frame.inc_time = pt_time_usec() - frame.inc_time;
 
         /* Calculate exclusive time */
