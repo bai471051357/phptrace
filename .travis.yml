@@ -1,23 +1,27 @@
-language: php
+language: c
 
-php:
-  - 5.2
-  - 5.3
-  - 5.4
-  - 5.5
-  - 5.6
+compiler:
+    - clang
+    - gcc
+
+env:
+    - PT_PHP_VERSION=5.2.17
+    - PT_PHP_VERSION=5.3.29
+    - PT_PHP_VERSION=5.4.37
+    - PT_PHP_VERSION=5.5.33
+    - PT_PHP_VERSION=5.6.19
+    - PT_PHP_VERSION=7.0.4
 
 before_install:
     # build PHP without ZTS by ourselves...
-    - PT_PHP_VERSION=`php --version | awk 'NR == 1 {print $2}'`
     - ./.travis/php_get.sh ${PT_PHP_VERSION}
     - ./.travis/php_build.sh `pwd` php-${PT_PHP_VERSION}.tar.bz2
     - PT_PHP_PATH=`pwd`/php-${PT_PHP_VERSION}
     - PT_PHP_BIN=${PT_PHP_PATH}/bin/php
 
 before_script:
-    - (cd cmdtool && make)
     - ./.travis/ext_build.sh extension ${PT_PHP_PATH}
+    - (cd extension && make cli)
 
 script:
     - (cd ${PT_PHP_PATH} && TEST_PHP_EXECUTABLE=${PT_PHP_BIN} ${PT_PHP_BIN} -n run-tests.php -q -n -d extension=trace.so -g "FAIL" --show-diff --set-timeout 120 tests Zend/tests; true)

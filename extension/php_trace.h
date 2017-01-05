@@ -1,5 +1,5 @@
 /**
- * Copyright 2015 Qihoo 360
+ * Copyright 2017 Qihoo 360
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,6 @@
 extern zend_module_entry trace_module_entry;
 #define phpext_trace_ptr &trace_module_entry
 
-#define PHP_TRACE_VERSION "0.3.1-dev"
-
 #ifdef PHP_WIN32
 #   define PHP_TRACE_API __declspec(dllexport)
 #elif defined(__GNUC__) && __GNUC__ >= 4
@@ -34,8 +32,10 @@ extern zend_module_entry trace_module_entry;
 #include "TSRM.h"
 #endif
 
-#include "trace_comm.h"
 #include "trace_ctrl.h"
+#include "trace_type.h"
+#include "trace_version.h"
+#include "trace_filter.h"
 
 PHP_MINIT_FUNCTION(trace);
 PHP_MSHUTDOWN_FUNCTION(trace);
@@ -56,31 +56,43 @@ ZEND_BEGIN_MODULE_GLOBALS(trace)
     pt_ctrl_t               ctrl;           /* ctrl module */
     char                    ctrl_file[256]; /* ctrl filename */
 
-    pt_comm_socket_t        comm;           /* comm module */
-    char                    comm_file[256]; /* comm filename */
+    int                     sock_fd;        /* comm socket */
+    char                    sock_addr[256]; /* comm address */
 
     pid_t                   pid;            /* process id */
     long                    level;          /* nesting level */
 
-    long                    ping;           /* last ping time (second) */
-    long                    idle_timeout;   /* idle timeout, for current - last ping */
+    pt_request_t            request;        /* current request info */
+
+    long                   *exc_time_table; /* exclusive time table */
+    size_t                  exc_time_len;   /* length of time table */
+
+    pt_filter_t             pft;            /* filter module */
 ZEND_END_MODULE_GLOBALS(trace)
 
 
-/**
- * In every utility function you add that needs to use variables in
- * php_trace_globals, call TSRMLS_FETCH(); after declaring other variables
- * used by that function, or better yet, pass in TSRMLS_CC after the last
- * function argument and declare your utility function with TSRMLS_DC after the
- * last declared argument.  Always refer to the globals in your function as
- * TRACE_G(variable).  You are encouraged to rename these macros something
- * shorter, see examples in any other php module directory.
- */
+#ifdef ZEND_ENGINE_3
+    /* Always refer to the globals in your function as TRACE_G(variable). You are
+     * encouraged to rename these macros something shorter, see examples in any
+     * other php module directory. */
+    #define PTG(v) ZEND_MODULE_GLOBALS_ACCESSOR(trace, v)
 
-#ifdef ZTS
-#define PTG(v) TSRMG(trace_globals_id, zend_trace_globals *, v)
+    #if defined(ZTS) && defined(COMPILE_DL_TRACE)
+    ZEND_TSRMLS_CACHE_EXTERN();
+    #endif
 #else
-#define PTG(v) (trace_globals.v)
+    /* In every utility function you add that needs to use variables in
+     * php_trace_globals, call TSRMLS_FETCH(); after declaring other variables used
+     * by that function, or better yet, pass in TSRMLS_CC after the last function
+     * argument and declare your utility function with TSRMLS_DC after the last
+     * declared argument.  Always refer to the globals in your function as
+     * TRACE_G(variable).  You are encouraged to rename these macros something
+     * shorter, see examples in any other php module directory. */
+    #ifdef ZTS
+    #define PTG(v) TSRMG(trace_globals_id, zend_trace_globals *, v)
+    #else
+    #define PTG(v) (trace_globals.v)
+    #endif
 #endif
 
 #endif  /* PHP_TRACE_H */

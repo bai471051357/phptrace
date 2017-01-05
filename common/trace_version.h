@@ -1,5 +1,5 @@
 /**
- * Copyright 2015 Qihoo 360
+ * Copyright 2017 Yuchen Wang <phobosw@gmail.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,11 @@
  * limitations under the License.
  */
 
-#ifndef TRACE_STATUS_H
-#define TRACE_STATUS_H
+#ifndef TRACE_VERSION_H
+#define TRACE_VERSION_H
 
-#include "trace.h"
-#include "trace_util.h"
-
-
-#define MAX_STACK_DEEP      16
-#define MAX_RETRY           3
-
-#define valid_ptr(p)        ((p) && 0 == ((p) & (sizeof(long) - 1)))
-
-/* stack related */
-int status_dump_once(pt_context_t* ctx);
-int status_dump_ptrace(pt_context_t* ctx);
-void process_opt_s(pt_context_t *ctx);
+#define TRACE_VERSION "1.0.0-beta"
+#define TRACE_CLI_VERSION "1.0.0-beta"
+#define TRACE_EXT_VERSION "0.6.0-beta"
 
 #endif
