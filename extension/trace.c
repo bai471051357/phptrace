@@ -32,6 +32,10 @@
 #include "sds/sds.h"
 #include "trace_filter.h"
 
+#ifdef TRACE_CHAIN
+#include "trace_chain.h"
+#endif
+
 
 /**
  * Trace Global
@@ -52,6 +56,11 @@
 #define TRACE_TO_OUTPUT (1 << 0)
 #define TRACE_TO_TOOL   (1 << 1)
 #define TRACE_TO_NULL   (1 << 2)
+
+/* Feature of chain */
+#ifdef TRACE_CHAIN
+#define TRACE_TO_CHAIN  (1 << 3)
+#endif
 
 /* Utils for PHP 7 */
 #if PHP_VERSION_ID < 70000
@@ -333,6 +342,11 @@ PHP_RINIT_FUNCTION(trace)
     if (CTRL_IS_ACTIVE()) {
         handle_command();
     }
+
+#ifdef TRACE_CHAIN
+    pt_chain_ctor(&(PTG(pct)));
+    php_printf("%s\n",SG(request_info).request_uri);
+#endif
     
     /* Filter url */
     if (PTG(pft).type & PT_FILTER_URL) {

@@ -89,6 +89,11 @@ Command line options
 * -l        limit output count
 * --ptrace  in status mode fetch data using ptrace
 
+Call chain
+------------------------------
+
+You open chain option  by make '-DTRACE_CHAIN' 
+
 
 Usage
 ------------------------------

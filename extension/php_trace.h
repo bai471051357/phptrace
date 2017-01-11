@@ -37,6 +37,10 @@ extern zend_module_entry trace_module_entry;
 #include "trace_version.h"
 #include "trace_filter.h"
 
+#ifdef TRACE_CHAIN
+#include "trace_chain.h"
+#endif
+
 PHP_MINIT_FUNCTION(trace);
 PHP_MSHUTDOWN_FUNCTION(trace);
 PHP_RINIT_FUNCTION(trace);
@@ -68,6 +72,9 @@ ZEND_BEGIN_MODULE_GLOBALS(trace)
     size_t                  exc_time_len;   /* length of time table */
 
     pt_filter_t             pft;            /* filter module */
+#ifdef TRACE_CHAIN
+    pt_chain_t              pct;            /* chain module */
+#endif
 ZEND_END_MODULE_GLOBALS(trace)
 
 
