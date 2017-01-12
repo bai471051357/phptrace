@@ -39,6 +39,9 @@ extern zend_module_entry trace_module_entry;
 
 #ifdef TRACE_CHAIN
 #include "trace_chain.h"
+
+/* Error output */
+#define ERROR(format, ...) fprintf(stderr, "[PHPTRACE] [file:%s] [line:%s]" format "\n", __FILE__, __LINE__, ##__VA_ARGS__)
 #endif
 
 PHP_MINIT_FUNCTION(trace);
@@ -53,27 +56,30 @@ PHP_MINFO_FUNCTION(trace);
  */
 ZEND_BEGIN_MODULE_GLOBALS(trace)
     zend_bool               enable;
-    long                    dotrace;        /* flags of trace */
+    long                    dotrace;            /* flags of trace */
 
-    char                    *data_dir;      /* data path, should be writable */
+    char                    *data_dir;          /* data path, should be writable */
 
-    pt_ctrl_t               ctrl;           /* ctrl module */
-    char                    ctrl_file[256]; /* ctrl filename */
+    pt_ctrl_t               ctrl;               /* ctrl module */
+    char                    ctrl_file[256];     /* ctrl filename */
 
-    int                     sock_fd;        /* comm socket */
-    char                    sock_addr[256]; /* comm address */
+    int                     sock_fd;            /* comm socket */
+    char                    sock_addr[256];     /* comm address */
 
-    pid_t                   pid;            /* process id */
-    long                    level;          /* nesting level */
+    pid_t                   pid;                /* process id */
+    long                    level;              /* nesting level */
 
-    pt_request_t            request;        /* current request info */
+    pt_request_t            request;            /* current request info */
 
-    long                   *exc_time_table; /* exclusive time table */
-    size_t                  exc_time_len;   /* length of time table */
+    long                   *exc_time_table;     /* exclusive time table */
+    size_t                  exc_time_len;       /* length of time table */
 
-    pt_filter_t             pft;            /* filter module */
+    pt_filter_t             pft;                /* filter module */
+
 #ifdef TRACE_CHAIN
-    pt_chain_t              pct;            /* chain module */
+    char                    *chain_log_path;    /* chain log path */
+    pt_chain_t              pct;                /* chain module */
+    pt_chain_log_t          pcl;                /* chain log module */
 #endif
 ZEND_END_MODULE_GLOBALS(trace)
 

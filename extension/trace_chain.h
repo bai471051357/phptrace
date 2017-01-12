@@ -1,4 +1,3 @@
-
 /**
  * Copyright 2017 Bing Bai <silkcutbeta@gmail.com>
  *
@@ -19,61 +18,58 @@
 #define TRACE_CHAIN_H
 
 #include <string.h>
-#include "php.h"
 #include <sys/types.h>
+#include <arpa/inet.h>
+#include "php7_wrapper.h"
+#include "php.h"
+#include "trace_log.h"
+#include "trace_intercept.h"
 
-#define PT_MAX_IP_LEN              64
 #define PT_MAX_KEY_LEN             256
 #define PT_MAX_VAL_LEN             256 
 #define PT_DEFAULT_ID              "0"
 
-#define INIT_HEADER_ID(key)     do {                                                \
-    pt_chain_key_t *key;                                                            \
-    if (zend_hash_find(pch->chain_uri_key, #key, sizeof(#key),                      \
-            (void **)&key) == SUCCESS) {                                            \
-        char *key_##result = pt_sub_query_key(query_string, trace_id->receive_key);  \
-        if (key_##result != NULL) {                                                   \
-            key->val = key_##result;                                                \
-        } else {                                                                    \
-            strncpy(key->val, PT_DEFAULT_ID, strlen(PT_DEFAULT_ID));                      \
-        }                                                                           \
-    }                                                                               \
-} while(0)
+#define zend_true                   1
+#define zend_flase                  0
 
-#define ADD_HASH_CHAIN_KEY(ht, pck) zend_hash_add(ht, pck->name, (strlen(pck->name) + 1), \
+#define ADD_HASH_CHAIN_KEY(ht, pck) pt_zend_hash_update(ht, pck->name, (strlen(pck->name) + 1), \
         (void *)&pck, sizeof(pt_chain_key_t *), NULL)
-
-
 
 /* key val map */
 typedef struct {
     char *name;
     char *receive_key;
+    int receive_key_len;
     char *pass_key;
     char *val;
     zend_bool is_pass;
-}pt_chain_key_t;
+} pt_chain_key_t;
 
 /* chain header */
 typedef struct {
-    pt_chain_key_t *trace_id;    
-    pt_chain_key_t *span_id;
-    pt_chain_key_t *parent_span_id;
-    HashTable *chain_uri_key;           /* chain uri key*/
+    pt_chain_key_t *trace_id;           /* trace id */
+    pt_chain_key_t *span_id;            /* span id */
+    pt_chain_key_t *parent_span_id;     /* parent sapn id */
+    pt_chain_key_t *sampled;            /* sampled */
+    pt_chain_key_t *flags;              /* flags */
+    HashTable *chain_header_key;        /* chain uri key*/
 
-    char ip[PT_MAX_IP_LEN];             /* device ip */
+    char ip[INET_ADDRSTRLEN];           /* device ip */
 } pt_chain_header_t;
 
-typedef struct {
-    pt_chain_header_t pch;
+/* chain struct */
+typedef struct pt_chain_st {
+
+    pt_chain_header_t pch;              /* chain header */
 
     /* excute time */
-    long execute_begin_time;
-    long execute_end_time;
+    long execute_begin_time;            /* execute begin time */
+    long execute_end_time;              /* execute end time */
 
     /* http request detail */
     const char *sapi;
     const char *method;
+    const char *content_type;
     const char *script;
     const char *request_uri;
     const char *query_string;
@@ -81,12 +77,17 @@ typedef struct {
 
     /* console paramter */
     int argc; 
-    const char *argv;
+    const char **argv;
+
+    /* trace log */
+    pt_chain_log_t *pcl; 
+
+    /* trace interceptor */
+    pt_interceptor_t pit;
     
 } pt_chain_t;
 
-void pt_chain_ctor(pt_chain_t *pct);
+void pt_chain_ctor(pt_chain_t *pct, pt_chain_log_t *pcl);
 void pt_chain_dtor(pt_chain_t *pct);
-           
+char *pt_rebuild_url(pt_chain_t *pct, char *ori_url);
 #endif
-

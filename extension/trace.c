@@ -31,9 +31,11 @@
 #include "trace_type.h"
 #include "sds/sds.h"
 #include "trace_filter.h"
+#include "php7_wrapper.h"
 
 #ifdef TRACE_CHAIN
 #include "trace_chain.h"
+#include "trace_log.h"
 #endif
 
 
@@ -60,21 +62,6 @@
 /* Feature of chain */
 #ifdef TRACE_CHAIN
 #define TRACE_TO_CHAIN  (1 << 3)
-#endif
-
-/* Utils for PHP 7 */
-#if PHP_VERSION_ID < 70000
-#define P7_EX_OBJ(ex)   ex->object
-#define P7_EX_OBJCE(ex) Z_OBJCE_P(ex->object)
-#define P7_EX_OPARR(ex) ex->op_array
-#define P7_STR(v)       v
-#define P7_STR_LEN(v)   strlen(v)
-#else
-#define P7_EX_OBJ(ex)   Z_OBJ(ex->This)
-#define P7_EX_OBJCE(ex) Z_OBJCE(ex->This)
-#define P7_EX_OPARR(ex) (&(ex->func->op_array))
-#define P7_STR(v)       ZSTR_VAL(v)
-#define P7_STR_LEN(v)   ZSTR_LEN(v)
 #endif
 
 /**
@@ -196,6 +183,10 @@ PHP_INI_BEGIN()
     STD_PHP_INI_ENTRY("trace.enable",    "1",    PHP_INI_SYSTEM, OnUpdateBool, enable, zend_trace_globals, trace_globals)
     STD_PHP_INI_ENTRY("trace.dotrace",   "0",    PHP_INI_SYSTEM, OnUpdateLong, dotrace, zend_trace_globals, trace_globals)
     STD_PHP_INI_ENTRY("trace.data_dir",  "/tmp", PHP_INI_SYSTEM, OnUpdateString, data_dir, zend_trace_globals, trace_globals)
+
+#ifdef TRACE_CHAIN
+    STD_PHP_INI_ENTRY("trace.chain_log_path",  DEFAULT_PATH, PHP_INI_SYSTEM, OnUpdateString, chain_log_path, zend_trace_globals, trace_globals)
+#endif
 PHP_INI_END()
 
 /* php_trace_init_globals */
@@ -271,6 +262,10 @@ PHP_MINIT_FUNCTION(trace)
         return FAILURE;
     }
 
+#ifdef TRACE_CHAIN
+    pt_chain_log_ctor(&PTG(pcl), PTG(chain_log_path));
+#endif
+
 #if TRACE_DEBUG
     /* always do trace in debug mode */
     PTG(dotrace) |= TRACE_TO_NULL;
@@ -320,6 +315,10 @@ PHP_MSHUTDOWN_FUNCTION(trace)
     /* Clear pft module */
     pt_filter_dtr(&PTG(pft));
 
+#ifdef TRACE_CHAIN
+    pt_chain_log_dtor(&PTG(pcl));
+#endif
+
     return SUCCESS;
 }
 
@@ -344,8 +343,8 @@ PHP_RINIT_FUNCTION(trace)
     }
 
 #ifdef TRACE_CHAIN
-    pt_chain_ctor(&(PTG(pct)));
-    php_printf("%s\n",SG(request_info).request_uri);
+    pt_chain_ctor(&PTG(pct), &PTG(pcl));
+    pt_chain_log_init(&PTG(pcl));
 #endif
     
     /* Filter url */
@@ -377,6 +376,11 @@ PHP_RSHUTDOWN_FUNCTION(trace)
     if (!PTG(enable)) {
         return SUCCESS;
     }
+
+#ifdef TRACE_CHAIN
+    pt_chain_dtor(&PTG(pct));
+    pt_chain_log_flush(&PTG(pcl));
+#endif
 
     /* Request process */
     if (PTG(dotrace)) {
@@ -730,6 +734,7 @@ static void frame_build(pt_frame_t *frame, zend_bool internal, unsigned char typ
         for (i = 0; i < frame->arg_count; i++) {
             frame->args[i] = repr_zval(args[i], 32 TSRMLS_CC);
         }
+        frame->ori_args = args;
 #else
         if (frame->arg_count) {
             i = 0;
@@ -744,6 +749,7 @@ static void frame_build(pt_frame_t *frame, zend_bool internal, unsigned char typ
                     p = ZEND_CALL_VAR_NUM(ex, ex->func->op_array.last_var + ex->func->op_array.T);
                 }
             }
+            frame->ori_args = &p;
             while(i < frame->arg_count) {
                 frame->args[i++] = repr_zval(p++, 32);
             }
@@ -1268,8 +1274,21 @@ ZEND_API void pt_execute_core(int internal, zend_execute_data *execute_data, zva
 #endif
 
     PTG(level)++;
-
+#ifdef TRACE_CHAIN
+#if PHP_VERSION_ID < 50500
+    zend_function *zf = obtain_zend_function(internal, execute_data, op_array);
+#else 
+    zend_function *zf = obtain_zend_function(internal, execute_data, NULL);
+#endif
+    zend_bool match_intercept = 0; 
+    pt_interceptor_ele_t *i_ele;
+    char *class_name = (zf->common.scope != NULL && zf->common.scope->name != NULL)  ? P7_STR(zf->common.scope->name) : NULL;
+    char *function_name = zf->common.function_name == NULL ? NULL : P7_STR(zf->common.function_name);
+    match_intercept = pt_intercept_hit(&PTG(pct).pit, &i_ele, class_name, function_name);
+    if (dotrace || match_intercept) {
+#else
     if (dotrace) {
+#endif
 #if PHP_VERSION_ID < 50500
         frame_build(&frame, internal, PT_FRAME_ENTRY, caller, execute_data, op_array TSRMLS_CC);
 #else
@@ -1298,6 +1317,13 @@ ZEND_API void pt_execute_core(int internal, zend_execute_data *execute_data, zva
         }
 
         frame.inc_time = pt_time_usec();
+        frame.entry_time = frame.inc_time;
+
+#ifdef TRACE_CHAIN
+    if (match_intercept) {
+        i_ele->capture(&PTG(pct).pit, &frame);  
+    }
+#endif
     }
 
     /* Call original under zend_try. baitout will be called when exit(), error
@@ -1340,9 +1366,14 @@ ZEND_API void pt_execute_core(int internal, zend_execute_data *execute_data, zva
         /* call zend_bailout() at the end of this function, we still want to
          * send message. */
     } zend_end_try();
-
+#ifdef TRACE_CHAIN
+    if (dotrace || match_intercept) {
+#else
     if (dotrace) {
-        frame.inc_time = pt_time_usec() - frame.inc_time;
+#endif
+        long current_time = pt_time_usec(); 
+        frame.inc_time = current_time - frame.inc_time;
+        frame.exit_time = current_time;
 
         /* Calculate exclusive time */
         if (PTG(level) + 1 < PTG(exc_time_len)) {
@@ -1373,6 +1404,12 @@ ZEND_API void pt_execute_core(int internal, zend_execute_data *execute_data, zva
         if (PTG(dotrace) & TRACE_TO_OUTPUT & dotrace) {
             pt_type_display_frame(&frame, 1, "< ");
         }
+
+#ifdef TRACE_CHAIN
+        if (match_intercept) {
+            i_ele->record(&PTG(pct).pit, &frame);  
+        }
+#endif
 
 #if PHP_VERSION_ID < 70000
         /* Free return value */

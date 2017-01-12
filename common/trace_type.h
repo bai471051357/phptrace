@@ -91,6 +91,10 @@ typedef struct {
 
     int64_t inc_time;           /* inclusive wall time */
     int64_t exc_time;           /* exclusive wall time */
+
+    zval **ori_args;            /* origin args */
+    int64_t entry_time;         /* entry wall time */ 
+    int64_t exit_time;          /* exit wall time */
 } pt_frame_t;
 
 size_t pt_type_len_frame(pt_frame_t *frame);
