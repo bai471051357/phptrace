@@ -107,12 +107,6 @@ void add_span_annotation_intercept(zval *span, const char *value, long timestamp
     //efree(full_service_name);
 }
 
-void add_span_bannotation_long(zval *span, const char *key, long value, char *service_name, char *ipv4, long port) 
-{
-    char str[64];
-    sprintf(str, "%ld", value);
-    add_span_bannotation(span, key, (const char*)str, service_name, ipv4, port);
-}
 
 void add_span_bannotation(zval *span, const char *key, const char *value, char *service_name, char *ipv4, long port)
 {
@@ -128,6 +122,18 @@ void add_span_bannotation(zval *span, const char *key, const char *value, char *
     add_endpoint(bannotation, service_name, ipv4, port);
     add_next_index_zval(bannotations, bannotation);
     PT_FREE_ALLOC_ZVAL(bannotation);
+}
+
+static void add_span_bannotation_intercept(zval *span, const char *key, const char *value, struct pt_chain_st *pct) 
+{
+    add_span_bannotation(span, key, value, pct->service_name, pct->pch.ip, pct->pch.port);
+}
+
+static void add_span_bannotation_long_intercept(zval *span, const char *key, long value, struct pt_chain_st *pct)
+{
+    char str[64];
+    sprintf(str, "%ld", value);
+    add_span_bannotation_intercept(span, key, (const char*)str, pct);
 }
 
 zend_bool pt_intercept_hit(pt_interceptor_t *pit, pt_interceptor_ele_t **eleDest,char *class_name, char *function_name)
@@ -275,7 +281,7 @@ static zval *build_com_record(pt_interceptor_t *pit, pt_frame_t *frame, int add_
 
     if (add_args == 1) {
         char *value = convert_args_to_string(frame);                                                                
-        add_span_bannotation(span, name, value, pit->pct->service_name, pit->pct->pch.ip, pit->pct->pch.port);
+        add_span_bannotation_intercept(span, name, value, pit->pct);
         efree(value);
     }
     efree(name);
@@ -473,8 +479,8 @@ static void build_curl_bannotation(zval *span, pt_interceptor_t *pit, zval *hand
     }
     pt_zval_dtor(&func);
 
-    add_span_bannotation(span, "method", method, "http", pit->pct->pch.ip, pit->pct->pch.port);
-    add_span_bannotation(span, "http.url", RETURN_Z_STRING(url), "http", pit->pct->pch.ip, pit->pct->pch.port);
+    add_span_bannotation_intercept(span, "method", method, pit->pct);
+    add_span_bannotation_intercept(span, "http.url", RETURN_Z_STRING(url), pit->pct);
 
     if (check_error == 1) {
         PT_ZVAL_STRING(&func, "curl_errno", 1);
@@ -611,6 +617,11 @@ static zend_bool pdo_hit(char *class_name, char *function_name)
     if (strcmp(function_name, "commit") == 0) {
         return 1;
     }
+
+    if (strcmp(function_name, "prepare") == 0) {
+        return 1;
+    }
+
     return 0;
 }
 
@@ -651,9 +662,9 @@ static zend_bool pdo_hit(char *class_name, char *function_name)
         build_main_span_intercept(&span, #keyword, pit->pct, frame);                                                                            \
         add_span_annotation_intercept(span, "cs", frame->entry_time, pit->pct);                                                       \
         add_span_annotation_intercept(span, "cr", frame->exit_time, pit->pct);                                                        \
-        add_span_bannotation(span, "PDO."#keyword, RETURN_Z_STRING(fir_arg), pit->pct->service_name, pit->pct->pch.ip, pit->pct->pch.port);                   \
+        add_span_bannotation_intercept(span, "PDO."#keyword, RETURN_Z_STRING(fir_arg), pit->pct);                   \
         GET_PDO_DBH                                                                                                                             \
-        add_span_bannotation(span, "sa", dbh->data_source, pit->pct->service_name, pit->pct->pch.ip, pit->pct->pch.port);                               \
+        add_span_bannotation_intercept(span, "sa", dbh->data_source, pit->pct);                               \
         zval *ret = frame->ori_ret;                                                                                                             \
         if (ret != NULL && PT_Z_TYPE_P(ret) == IS_FALSE) {                                                                                      \
             zval ret;                                                                                                                           \
@@ -662,15 +673,15 @@ static zend_bool pdo_hit(char *class_name, char *function_name)
             if (pt_call_user_function(NULL, &object, &function, &ret, 0, NULL) == SUCCESS) {                                                    \
                 zval *error_msg;                                                                                                                \
                 if ((Z_TYPE(ret) == IS_ARRAY) &&  (pt_zend_hash_index_find(Z_ARRVAL(ret), 2, (void **)&error_msg) == SUCCESS)) {                \
-                    add_span_bannotation(span, "error", Z_STRVAL_P(error_msg), pit->pct->service_name, pit->pct->pch.ip, pit->pct->pch.port);           \
+                    add_span_bannotation_intercept(span, "error", Z_STRVAL_P(error_msg), pit->pct);           \
                 } else {                                                                                                                        \
-                    add_span_bannotation(span, "error", "unknown", pit->pct->service_name, pit->pct->pch.ip, pit->pct->pch.port);                       \
+                    add_span_bannotation_intercept(span, "error", "unknown", pit->pct);                       \
                 }                                                                                                                               \
             }                                                                                                                                   \
             pt_zval_dtor(&function);                                                                                                            \
             pt_zval_dtor(&ret);                                                                                                                 \
         }                                                                                                                                       \
-        PDO_SET_EXCEPTION("PDO."#keyword, pit->pct->pch.ip, pit->pct->pch.port);                                                                \
+        PDO_SET_EXCEPTION(pit->pct->service_name, pit->pct->pch.ip, pit->pct->pch.port);                                                                \
         pt_chain_add_span(pit->pct->pcl, span);                                                                                                 \
     }                                                                                                                                           \
 }while(0)
@@ -706,8 +717,8 @@ static void pdo_statement_record(pt_interceptor_t *pit, pt_frame_t *frame)
 #else
     pdo_stmt_t *stmt = (pdo_stmt_t *)Z_PDO_STMT_P(object); 
 #endif
-    add_span_bannotation(span, "PDOStatement::execute", stmt->query_string, "execute", pit->pct->pch.ip, pit->pct->pch.port);
-    add_span_bannotation(span, "sa", stmt->dbh->data_source, "PDOStatement::execute", pit->pct->pch.ip, pit->pct->pch.port);                       \
+    add_span_bannotation_intercept(span, "PDOStatement::execute", stmt->query_string, pit->pct);
+    add_span_bannotation_intercept(span, "sa", stmt->dbh->data_source, pit->pct);                      
     /* todo retrive data from stmt->bound_params and stmt->bound_columns */
     
     zval *ret = frame->ori_ret;
@@ -718,9 +729,9 @@ static void pdo_statement_record(pt_interceptor_t *pit, pt_frame_t *frame)
         if (pt_call_user_function(NULL, &object, &function, &ret, 0, NULL) == SUCCESS) {
             zval *error_msg;
             if ((Z_TYPE(ret) == IS_ARRAY) &&  (pt_zend_hash_index_find(Z_ARRVAL(ret), 2, (void **)&error_msg) == SUCCESS)) {
-                add_span_bannotation(span, "error", Z_STRVAL_P(error_msg), "PDOStatement::execute", pit->pct->pch.ip, pit->pct->pch.port);
+                add_span_bannotation_intercept(span, "error", Z_STRVAL_P(error_msg),  pit->pct);
             } else {
-                add_span_bannotation(span, "error", "unknown", "PDOStatement::execute", pit->pct->pch.ip, pit->pct->pch.port);
+                add_span_bannotation_intercept(span, "error", "unknown", pit->pct);
             }
         }
         pt_zval_dtor(&function);
@@ -767,7 +778,7 @@ static zend_bool redis_hit(char *class_name, char *function_name)
     key = strcat(key, "::");                                                                                     \
     key = strcat(key, frame->function);                                                                         \
     char *value = convert_args_to_string(frame);                                                                \
-    add_span_bannotation(span, key, value, frame->function, pit->pct->pch.ip, pit->pct->pch.port);              \
+    add_span_bannotation_intercept(span, key, value, pit->pct);                                                 \
     efree(value);                                                                                               \
 
 static void redis_record(pt_interceptor_t *pit, pt_frame_t *frame)
@@ -810,7 +821,7 @@ static void redis_record(pt_interceptor_t *pit, pt_frame_t *frame)
         PT_ZVAL_STRING(&function, "getLastError", 1);
         if (pt_call_user_function(NULL, &object, &function, &error, 0, NULL) == SUCCESS) {
             if (Z_TYPE(error) == IS_STRING) {
-                add_span_bannotation(span, "error", Z_STRVAL(error), key, Z_STRVAL(host), Z_LVAL(port));
+                add_span_bannotation(span, "error", Z_STRVAL(error), "Redis", Z_STRVAL(host), Z_LVAL(port));
             }
             zval_dtor(&error);
         }
@@ -821,7 +832,7 @@ static void redis_record(pt_interceptor_t *pit, pt_frame_t *frame)
     if (EG(exception) != NULL) { 
         zend_class_entry *redis_exception_ce;
         if (pt_zend_hash_find(CG(class_table), "redisexception", sizeof("redisexception"), (void **)&redis_exception_ce) == SUCCESS) {
-            SET_SPAN_EXCEPTION(redis_exception_ce, key, Z_STRVAL(host), Z_LVAL(port));
+            SET_SPAN_EXCEPTION(redis_exception_ce, "Redis", Z_STRVAL(host), Z_LVAL(port));
         }
     }
    
@@ -876,9 +887,9 @@ static void memcached_record(pt_interceptor_t *pit, pt_frame_t *frame)
         if (pt_call_user_function(NULL, &object, &function, &ret, 0, NULL) == SUCCESS) {
             zval *error_msg;
             if ((Z_TYPE(ret) == IS_ARRAY) &&  (pt_zend_hash_index_find(Z_ARRVAL(ret), 2, (void **)&error_msg) == SUCCESS)) {
-                add_span_bannotation(span, "error", Z_STRVAL_P(error_msg), key, pit->pct->pch.ip, pit->pct->pch.port);
+                add_span_bannotation_intercept(span, "error", Z_STRVAL_P(error_msg), pit->pct);
             } else {
-                add_span_bannotation(span, "error", "unknown", key, pit->pct->pch.ip, pit->pct->pch.port);
+                add_span_bannotation_intercept(span, "error", "unknown", pit->pct);
             }
         }
         pt_zval_dtor(&function);
@@ -889,7 +900,7 @@ static void memcached_record(pt_interceptor_t *pit, pt_frame_t *frame)
 }
 
 /*****************************mysqli******************************/
-static void mysqli_connect_common_record(pt_interceptor_t *pit, pt_frame_t *frame, char *service_name)
+static void mysqli_connect_common_record(pt_interceptor_t *pit, pt_frame_t *frame)
 {
     if (frame->arg_count < 1) {
         return;
@@ -899,19 +910,19 @@ static void mysqli_connect_common_record(pt_interceptor_t *pit, pt_frame_t *fram
 
     GET_FUNC_ARG(host,0);
     if (frame->arg_count >= 1 && PT_Z_TYPE_P(host) == IS_STRING) {
-        add_span_bannotation(span, "peer.host", Z_STRVAL_P(host), service_name, pit->pct->pch.ip, pit->pct->pch.port);
+        add_span_bannotation_intercept(span, "peer.host", Z_STRVAL_P(host), pit->pct);
     }
 
     GET_FUNC_ARG(dbname,3);
     if (frame->arg_count >= 4 && PT_Z_TYPE_P(dbname) == IS_STRING) {
-        add_span_bannotation(span, "peer.dbname", Z_STRVAL_P(dbname), service_name, pit->pct->pch.ip, pit->pct->pch.port);
+        add_span_bannotation_intercept(span, "peer.dbname", Z_STRVAL_P(dbname), pit->pct);
     }
 
     GET_FUNC_ARG(port,4);
     if (frame->arg_count >= 5 && PT_Z_TYPE_P(port) == IS_LONG) {
-        add_span_bannotation_long(span, "peer.port", Z_LVAL_P(port), service_name, pit->pct->pch.ip, pit->pct->pch.port);
+        add_span_bannotation_long_intercept(span, "peer.port", Z_LVAL_P(port), pit->pct);
     } else if (frame->arg_count >= 5 && PT_Z_TYPE_P(port) == IS_STRING) {
-        add_span_bannotation(span, "peer.port", Z_STRVAL_P(port), service_name, pit->pct->pch.ip, pit->pct->pch.port);
+        add_span_bannotation_intercept(span, "peer.port", Z_STRVAL_P(port), pit->pct);
     }
 
     /* todo add error */
@@ -920,7 +931,7 @@ static void mysqli_connect_common_record(pt_interceptor_t *pit, pt_frame_t *fram
 
 static void mysqli_connect_record(pt_interceptor_t *pit, pt_frame_t *frame, char *service_name)
 {
-    mysqli_connect_common_record(pit, frame, "mysqli_connect");
+    mysqli_connect_common_record(pit, frame);
 }
 
 static void db_query_record(pt_interceptor_t *pit, pt_frame_t *frame, int need_resource, char *service_name)
@@ -942,7 +953,7 @@ static void db_query_record(pt_interceptor_t *pit, pt_frame_t *frame, int need_r
     }
 
     if (PT_Z_TYPE_P(sql) == IS_STRING) {
-        add_span_bannotation(span, "sql", Z_STRVAL_P(sql), service_name, pit->pct->pch.ip, pit->pct->pch.port);
+        add_span_bannotation_intercept(span, "sql", Z_STRVAL_P(sql), pit->pct);
     }
     pt_chain_add_span(pit->pct->pcl, span);
 }
@@ -976,7 +987,7 @@ static zend_bool mysqli_common_hit(char *class_name, char *function_name)
 static void mysqli_common_record(pt_interceptor_t *pit, pt_frame_t *frame)
 {
     if (strcmp(frame->function, "__construct") == 0) {
-        mysqli_connect_common_record(pit, frame, "mysqli::__construct");
+        mysqli_connect_common_record(pit, frame);
         return;
     }
 
