@@ -39,9 +39,8 @@ extern zend_module_entry trace_module_entry;
 
 #ifdef TRACE_CHAIN
 #include "trace_chain.h"
-
-/* Error output */
-#define ERROR(format, ...) fprintf(stderr, "[PHPTRACE] [file:%s] [line:%s]" format "\n", __FILE__, __LINE__, ##__VA_ARGS__)
+#include "trace_intercept.h"
+#include "trace_util.h"
 #endif
 
 PHP_MINIT_FUNCTION(trace);
@@ -78,7 +77,9 @@ ZEND_BEGIN_MODULE_GLOBALS(trace)
 
 #ifdef TRACE_CHAIN
     char                    *chain_log_path;    /* chain log path */
+    char                    *service_name;      /* service name */
     pt_chain_t              pct;                /* chain module */
+    pt_interceptor_t        pit;                /* chain intercept module */
     pt_chain_log_t          pcl;                /* chain log module */
 #endif
 ZEND_END_MODULE_GLOBALS(trace)

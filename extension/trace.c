@@ -89,6 +89,10 @@ PHP_FUNCTION(trace_dump_address);
 PHP_FUNCTION(trace_set_filter);
 #endif
 
+#ifdef TRACE_CHAIN
+PHP_FUNCTION(trace_chain_truncate);
+#endif
+
 static void frame_build(pt_frame_t *frame, zend_bool internal, unsigned char type, zend_execute_data *caller, zend_execute_data *ex, zend_op_array *op_array TSRMLS_DC);
 static int frame_send(pt_frame_t *frame TSRMLS_DC);
 #if PHP_VERSION_ID < 70000
@@ -146,6 +150,9 @@ const zend_function_entry trace_functions[] = {
     PHP_FE(trace_dump_address, NULL)
     PHP_FE(trace_set_filter, trace_set_filter_arginfo)
 #endif
+#ifdef TRACE_CHAIN
+    PHP_FE(trace_chain_truncate, NULL)
+#endif
 #ifdef PHP_FE_END
     PHP_FE_END  /* Must be the last line in trace_functions[] */
 #else
@@ -186,6 +193,7 @@ PHP_INI_BEGIN()
 
 #ifdef TRACE_CHAIN
     STD_PHP_INI_ENTRY("trace.chain_log_path",  DEFAULT_PATH, PHP_INI_SYSTEM, OnUpdateString, chain_log_path, zend_trace_globals, trace_globals)
+    STD_PHP_INI_ENTRY("trace.service_name",  "default", PHP_INI_SYSTEM, OnUpdateString, service_name, zend_trace_globals, trace_globals)
 #endif
 PHP_INI_END()
 
@@ -264,6 +272,7 @@ PHP_MINIT_FUNCTION(trace)
 
 #ifdef TRACE_CHAIN
     pt_chain_log_ctor(&PTG(pcl), PTG(chain_log_path));
+    pt_intercept_ctor(&PTG(pit), &PTG(pct));
 #endif
 
 #if TRACE_DEBUG
@@ -317,6 +326,7 @@ PHP_MSHUTDOWN_FUNCTION(trace)
 
 #ifdef TRACE_CHAIN
     pt_chain_log_dtor(&PTG(pcl));
+    pt_intercept_dtor(&PTG(pit));
 #endif
 
     return SUCCESS;
@@ -343,7 +353,8 @@ PHP_RINIT_FUNCTION(trace)
     }
 
 #ifdef TRACE_CHAIN
-    pt_chain_ctor(&PTG(pct), &PTG(pcl));
+    pt_chain_ctor(&PTG(pct), &PTG(pcl), PTG(service_name));
+    pt_intercept_init(&PTG(pit));
     pt_chain_log_init(&PTG(pcl));
 #endif
     
@@ -380,6 +391,7 @@ PHP_RSHUTDOWN_FUNCTION(trace)
 #ifdef TRACE_CHAIN
     pt_chain_dtor(&PTG(pct));
     pt_chain_log_flush(&PTG(pcl));
+    pt_intercept_uninit(&PTG(pit));
 #endif
 
     /* Request process */
@@ -586,6 +598,19 @@ PHP_FUNCTION(trace_set_filter)
 }
 #endif
 
+#ifdef TRACE_CHAIN
+PHP_FUNCTION(trace_chain_truncate)
+{      
+    /* dtor and flush log */
+    pt_chain_dtor(&PTG(pct));
+    pt_chain_log_flush(&PTG(pcl));
+
+    /* ctor and init */
+    pt_chain_ctor(&PTG(pct), &PTG(pcl), PTG(service_name));
+    pt_chain_log_init(&PTG(pcl));
+}
+#endif
+
 /**
  * Obtain zend function
  * -------------------
@@ -730,6 +755,8 @@ static void frame_build(pt_frame_t *frame, zend_bool internal, unsigned char typ
             frame->args = calloc(frame->arg_count, sizeof(sds));
         }
 
+        frame->object = P7_EX_OBJ_ZVAL(ex);
+
 #if PHP_VERSION_ID < 70000
         for (i = 0; i < frame->arg_count; i++) {
             frame->args[i] = repr_zval(args[i], 32 TSRMLS_CC);
@@ -749,7 +776,7 @@ static void frame_build(pt_frame_t *frame, zend_bool internal, unsigned char typ
                     p = ZEND_CALL_VAR_NUM(ex, ex->func->op_array.last_var + ex->func->op_array.T);
                 }
             }
-            frame->ori_args = &p;
+            frame->ori_args = p;
             while(i < frame->arg_count) {
                 frame->args[i++] = repr_zval(p++, 32);
             }
@@ -880,6 +907,10 @@ static void frame_build(pt_frame_t *frame, zend_bool internal, unsigned char typ
     } else {
         frame->filename = NULL;
     }
+
+#ifdef TRACE_CHAIN
+    rand64hex(&frame->span_id);
+#endif
 }
 
 #if PHP_VERSION_ID < 70000
@@ -915,6 +946,9 @@ static void frame_set_retval(pt_frame_t *frame, zend_bool internal, zend_execute
     if (retval) {
         frame->retval = repr_zval(retval, 32 TSRMLS_CC);
     }
+#ifdef TRACE_CHAIN
+        frame->ori_ret = retval;
+#endif
 }
 #endif
 
@@ -1284,7 +1318,7 @@ ZEND_API void pt_execute_core(int internal, zend_execute_data *execute_data, zva
     pt_interceptor_ele_t *i_ele;
     char *class_name = (zf->common.scope != NULL && zf->common.scope->name != NULL)  ? P7_STR(zf->common.scope->name) : NULL;
     char *function_name = zf->common.function_name == NULL ? NULL : P7_STR(zf->common.function_name);
-    match_intercept = pt_intercept_hit(&PTG(pct).pit, &i_ele, class_name, function_name);
+    match_intercept = pt_intercept_hit(&PTG(pit), &i_ele, class_name, function_name);
     if (dotrace || match_intercept) {
 #else
     if (dotrace) {
@@ -1320,9 +1354,10 @@ ZEND_API void pt_execute_core(int internal, zend_execute_data *execute_data, zva
         frame.entry_time = frame.inc_time;
 
 #ifdef TRACE_CHAIN
-    if (match_intercept) {
-        i_ele->capture(&PTG(pct).pit, &frame);  
-    }
+        if (match_intercept) {
+            pt_build_chain_header(&PTG(pct));
+            i_ele->capture == NULL ? NULL : i_ele->capture(&PTG(pit), &frame);  
+        }
 #endif
     }
 
@@ -1407,7 +1442,7 @@ ZEND_API void pt_execute_core(int internal, zend_execute_data *execute_data, zva
 
 #ifdef TRACE_CHAIN
         if (match_intercept) {
-            i_ele->record(&PTG(pct).pit, &frame);  
+            i_ele->record == NULL ? NULL : i_ele->record(&PTG(pit), &frame);  
         }
 #endif
 
@@ -1420,6 +1455,9 @@ ZEND_API void pt_execute_core(int internal, zend_execute_data *execute_data, zva
 #endif
 
         pt_type_destroy_frame(&frame);
+#ifdef TRACE_CHAIN
+        efree(frame.span_id);
+#endif
     }
 
     PTG(level)--;

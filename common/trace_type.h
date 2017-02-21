@@ -19,6 +19,7 @@
 
 #include <stdint.h>
 #include "sds/sds.h"
+#include "php.h"
 
 /* pt_frame */
 #define PT_FRAME_ENTRY          1 /* entry */
@@ -92,9 +93,16 @@ typedef struct {
     int64_t inc_time;           /* inclusive wall time */
     int64_t exc_time;           /* exclusive wall time */
 
+#if PHP_VERSION_ID < 70000
     zval **ori_args;            /* origin args */
+#else
+    zval *ori_args;             /* origin args */
+#endif
     int64_t entry_time;         /* entry wall time */ 
     int64_t exit_time;          /* exit wall time */
+    zval *object;               /* object */
+    zval *ori_ret;              /* origin ret */
+    char *span_id;              /* current span id */
 } pt_frame_t;
 
 size_t pt_type_len_frame(pt_frame_t *frame);

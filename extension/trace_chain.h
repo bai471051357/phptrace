@@ -53,14 +53,19 @@ typedef struct {
     pt_chain_key_t *sampled;            /* sampled */
     pt_chain_key_t *flags;              /* flags */
     HashTable *chain_header_key;        /* chain uri key*/
+    zend_bool is_load_header;           /* load_header */
 
     char ip[INET_ADDRSTRLEN];           /* device ip */
+    int port;
 } pt_chain_header_t;
 
 /* chain struct */
 typedef struct pt_chain_st {
 
     pt_chain_header_t pch;              /* chain header */
+
+    /* service name */
+    char *service_name;
 
     /* excute time */
     long execute_begin_time;            /* execute begin time */
@@ -70,7 +75,7 @@ typedef struct pt_chain_st {
     const char *sapi;
     const char *method;
     const char *content_type;
-    const char *script;
+    char *script;
     const char *request_uri;
     const char *query_string;
     zend_bool is_cli;
@@ -87,7 +92,9 @@ typedef struct pt_chain_st {
     
 } pt_chain_t;
 
-void pt_chain_ctor(pt_chain_t *pct, pt_chain_log_t *pcl);
+void pt_chain_ctor(pt_chain_t *pct, pt_chain_log_t *pcl, char *service_name);
 void pt_chain_dtor(pt_chain_t *pct);
 char *pt_rebuild_url(pt_chain_t *pct, char *ori_url);
+void build_http_header(pt_chain_t *pct, zval *header, char *span_id);
+void pt_build_chain_header(pt_chain_t *pct);
 #endif

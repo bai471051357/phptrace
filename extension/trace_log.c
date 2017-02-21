@@ -21,8 +21,10 @@
 #include <sys/stat.h>
 #include <error.h>
 #include <fcntl.h>
+#include <time.h>
 #include "trace_log.h"
-#include "php.h"
+#include "trace_util.h"
+#include "php7_wrapper.h"
 
 void pt_chain_log_ctor(pt_chain_log_t *log, char *log_path)
 {
@@ -39,16 +41,27 @@ void pt_chain_log_init(pt_chain_log_t *log)
     memset(log->buf, 0x00, log->total_size);
     log->fd = -1;
     log->alloc_size = 0; 
+    PT_ALLOC_INIT_ZVAL(log->spans);
+    array_init(log->spans);
+}
+
+void pt_chain_add_span(pt_chain_log_t *log, zval *span)
+{
+    add_next_index_zval(log->spans, span);
+    PT_FREE_ALLOC_ZVAL(span);
 }
 
 void pt_chain_log_add(pt_chain_log_t *log, char *buf, size_t size)
 {
-    if (log->alloc_size + size >= log->total_size) {
+    if (log->alloc_size + size >= (log->total_size + 1)) {
         int realloc_size = log->alloc_size + ((int)(size/ALLOC_LOG_SIZE) + 1) * ALLOC_LOG_SIZE;
-        log->buf = prealloc(log->buf, realloc_size, 1);
+        log->buf = perealloc(log->buf, realloc_size, 1);
     }
     strncpy(log->buf + log->alloc_size, buf, size);
     log->alloc_size  += size;
+
+    strncpy(log->buf + log->alloc_size, "\n", 1);
+    log->alloc_size++;
 }
 
 static int pt_mkdir_recursive(const char *dir)
@@ -90,39 +103,78 @@ static int pt_mkdir_recursive(const char *dir)
 void pt_chain_log_flush(pt_chain_log_t *log)
 {
     char *dname; 
-    char *tmp_path = strdup(log->path);  
+    char tmp_path[64];
+    char *tmp_dir;
     ssize_t written_bytes = 0;
 
-    if (tmp_path == NULL) {
-        ERROR("dup log path error");
-    }
+    time_t raw_time;
+    struct tm* time_info;
+    char time_format[32];
+    memset(time_format, 0x00, 32);
+    time(&raw_time);
+    time_info = localtime(&raw_time);
+    strftime(time_format, 32, log->format, time_info);
+    sprintf(tmp_path, "%s-%s.log", log->path, time_format);
+    tmp_dir = estrdup(tmp_path); 
     
-    dname = dirname(tmp_path);
+
+    dname = dirname(tmp_dir);
     
     if (pt_mkdir_recursive(dname) == -1) {
-        ERROR("recursive make dir error [%s]", tmp_path);
+        CHAIN_ERROR("recursive make dir error [%s]", tmp_path);
         goto end;
     }
     
     if (log->fd == -1) {
-        log->fd = open(log->path, O_WRONLY|O_CREAT|O_APPEND, 0666);
+        log->fd = open(tmp_path, O_WRONLY|O_CREAT|O_APPEND, 0666);
         if (log->fd == -1) {
-            ERROR("open log error[%d] errstr[%s]", errno, strerror(errno));
+            CHAIN_ERROR("open log error[%d] errstr[%s]", errno, strerror(errno));
             goto end;
         }
     }
     
+    /* load span from log */
+    zval func;
+    zval ret;
+    zval *args[1];
+    args[0] = log->spans;
+    PT_ZVAL_STRING(&func, "json_encode", 1);
+    int result = pt_call_user_function(EG(function_table), (zval **)NULL, &func, &ret, 1, args);
+    if (result == SUCCESS) {
+        if (PT_Z_TYPE_P(&ret) != IS_STRING) {
+            
+            //PT_ZVAL_STRING(&func, "json_last_error", 0);
+            //zval ret1; 
+            //result = call_user_function(EG(function_table), (zval **)NULL, &func, &ret1, 1, args);
+            //if (result == SUCCESS) {
+            //    if (Z_TYPE(ret1) == IS_STRING) {
+            //        CHAIN_ERROR("%s", Z_STRVAL(ret1));     
+            //    }
+            //    zval_dtor(&ret1);
+            //}
+            zval_dtor(&ret);
+            goto end;
+        }
+        
+        pt_chain_log_add(log, Z_STRVAL(ret), Z_STRLEN(ret));
+        zval_dtor(&ret);
+    } else {
+        goto end;
+    }
+    
     do {
         if ((written_bytes = write(log->fd, log->buf, log->alloc_size) )== -1) {
-            ERROR("write log error[%d] errstr[%s]", errno, strerror(errno));
+            CHAIN_ERROR("write log error[%d] errstr[%s]", errno, strerror(errno));
             goto end;
         }
         written_bytes += written_bytes;
     }while(written_bytes < log->alloc_size);
-    
 
 end:
-    free(tmp_path);
+    pt_zval_dtor(&func);
+    efree(tmp_dir);
+    pt_zval_ptr_dtor(&log->spans);
+    PT_FREE_ALLOC_ZVAL(log->spans);
 }
 
 void pt_chain_log_dtor(pt_chain_log_t *log)

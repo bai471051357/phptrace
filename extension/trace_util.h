@@ -27,6 +27,14 @@
 #define CHAIN_HEADER_SAMPLED CHAIN_HEADER_PREFIX"Sampled"
 #define CHAIN_HEADER_FLAGS CHAIN_HEADER_PREFIX"Flags"
 
+#define CHAIN_REC_HEADER_PREFIX "HTTP_X_W_"
+#define CHAIN_REC_TRACE_ID CHAIN_REC_HEADER_PREFIX"TRACEID"
+#define CHAIN_REC_SPAN_ID CHAIN_REC_HEADER_PREFIX"SPANID"
+#define CHAIN_REC_SAMPLED CHAIN_REC_HEADER_PREFIX"SAMPLED"
+#define CHAIN_REC_FLAGS CHAIN_REC_HEADER_PREFIX"FLAGS"
+
+#define CHAIN_ERROR(format, ...) fprintf(stderr, "[PHPCHAIN] [file:%s] [line:%d]" format "\n", __FILE__, __LINE__, ##__VA_ARGS__)
+
 uint64_t rand_uint64(void);
 void b2hex(char **output, const unsigned char *input, int input_len);
 void bin2hex64(char **output, const uint64_t *input);

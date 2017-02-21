@@ -24,13 +24,17 @@
 #include <linux/limits.h>
 # endif
 
+#include "php.h"
+#include "Zend/zend_llist.h"
+#include "trace_type.h"
+
 #ifndef PATH_MAX
 #define PATH_MAX 4096 
 #endif
 
 #define ALLOC_LOG_SIZE  1024
 #define DEFAULT_LOG_DIR "/var/wd/log/chain/"
-#define DEFAULT_PATH    DEFAULT_LOG_DIR "trace_chain.log"
+#define DEFAULT_PATH    DEFAULT_LOG_DIR"trace_chain"
 #define LOG_FORMAT      "%Y%m%d%H" 
 
 /* chain log */
@@ -41,6 +45,7 @@ typedef struct {
     char *buf;
     uint64_t total_size;
     uint64_t alloc_size;
+    zval *spans;
 } pt_chain_log_t;
 
 /* log format */
@@ -53,12 +58,12 @@ typedef struct {
 typedef struct {
     char *key;
     char *value;
-    pt_chain_endpoint_t  endpoint_t;
+    pt_chain_endpoint_t  endpoint;
 }pt_chain_bannotations_t;
 
 typedef struct {
-    pt_chain_endpoint_t  endpoint_t;
-    long timestamp;
+    pt_chain_endpoint_t  endpoint;
+    int64_t timestamp;
     char *value;
 }pt_chain_annotations_t;
 
@@ -67,8 +72,8 @@ typedef struct {
     char *name;
     char *span_id;
     char *parent_span_id;
-    long timestamp;
-    long duration;
+    int64_t timestamp;
+    int64_t duration;
     int annotations_num;
     pt_chain_annotations_t *annotations;
     int bannotations_num;
@@ -81,6 +86,5 @@ int pt_chain_log_set_file_path(char *new_path);
 void pt_chain_log_add(pt_chain_log_t *log, char *buf, size_t size);
 void pt_chain_log_flush(pt_chain_log_t *log);
 void pt_chain_log_dtor(pt_chain_log_t *log);
-           
+void pt_chain_add_span(pt_chain_log_t *log, zval *span);
 #endif
-

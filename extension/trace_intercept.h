@@ -38,6 +38,13 @@ typedef struct {
     uint64_t hit_num;    
     uint64_t exception_num;
 
+    /* curl request info*/
+    zval *curl_header_record;               /* record curl handler set header */
+    zval *curl_multi_handlers;              /* record multi handler map curl handler */
+    zval *curl_handlers;                    /* record curl handler */
+    zval curl_http_header_const;      
+    zval CURLM_CALL_MULTI_PERFORM;          /* curl multi call multi perform */
+
     struct pt_chain_st *pct;
 }pt_interceptor_t;
 
@@ -60,5 +67,8 @@ typedef struct {
 void pt_intercept_ctor(pt_interceptor_t *pit, struct pt_chain_st *pct);
 void pt_intercept_dtor(pt_interceptor_t *pit);
 zend_bool pt_intercept_hit(pt_interceptor_t *pit, pt_interceptor_ele_t **ele, char *class_name, char *function_name);
+void build_main_span(zval **span, char *trace_id, char *service_name, char *span_id, char *parent_id, long timestamp, long duration);
+void add_span_annotation(zval *span, const char *value, long timestamp, char *service_name, char *ipv4, long port);
+void add_span_bannotation(zval *span, const char *key, const char *value, char *service_name, char *ipv4, long port);
 #endif
 

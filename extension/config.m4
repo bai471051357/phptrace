@@ -38,17 +38,17 @@ if test "$PHP_TRACE" != "no"; then
         trace_util.c \
         trace_chain.c"
 
-      AC_MSG_CHECKING([Check curl header])
-      if test "$PHP_CURL_HEADER" != "no"; then
-          if test -f "$PHP_CURL_HEADER/php_curl.h"; then
-             PHP_ADD_INCLUDE($PHP_CURL_HEADER)
-             AC_DEFINE(WITH_CURL_HEADER,1,[Include curl])
-          else 
-             AC_MSG_ERROR([PHP curl dir error])
-          fi
-      else
-          AC_MSG_ERROR([Trace chain must build with curl])
-      fi
+      dnl AC_MSG_CHECKING([Check curl header])
+      dnl if test "$PHP_CURL_HEADER" != "no"; then
+      dnl     if test -f "$PHP_CURL_HEADER/php_curl.h"; then
+      dnl        PHP_ADD_INCLUDE($PHP_CURL_HEADER)
+      dnl        AC_DEFINE(WITH_CURL_HEADER,1,[Include curl])
+      dnl     else 
+      dnl        AC_MSG_ERROR([PHP curl dir error])
+      dnl     fi
+      dnl else
+      dnl     AC_MSG_ERROR([Trace chain must build with curl])
+      dnl fi
   fi
 
   dnl $ext_srcdir available after PHP_NEW_EXTENSION

@@ -35,11 +35,15 @@ uint64_t rand_uint64(void)
 {
     uint64_t r = 0;
     int i = 0;
+    struct timeval tv;
+    int seed = gettimeofday(&tv, NULL) == 0 ? tv.tv_usec * getpid() : getpid();
+    srandom(seed);
     for (i = LOOP_COUNT; i > 0; i--) {
-      r = r*(RAND_MAX + (uint64_t)1) + rand();
+      r = r*(RAND_MAX + (uint64_t)1) + random();
     }
     return r;
 }
+
 
 void b2hex(char **output, const unsigned char *input, int input_len)
 {

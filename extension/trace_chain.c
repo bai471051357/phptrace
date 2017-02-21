@@ -25,14 +25,24 @@
 #include <stdlib.h>
 #include "trace_chain.h"
 #include "trace_util.h"
+#include "trace_time.h"
 
 /* only destory val key */
+#if PHP_MAJOR_VERSION < 7
 static void pt_key_destory_func(void *pDest)
 {
     pt_chain_key_t **data = (pt_chain_key_t **)pDest;
     (*data)->val ? efree((*data)->val) : NULL;
-    free(*data);
+    efree(*data);
 }
+#else
+static void pt_key_destory_func(zval *pDest)
+{
+    pt_chain_key_t *data = (pt_chain_key_t *)Z_PTR_P(pDest);
+    data->val ? efree(data->val) : NULL;
+    efree(data);
+}
+#endif
 
 /* sub query key */
 static char *pt_sub_query_key(const char *query_string, char *key)
@@ -150,32 +160,64 @@ static void retrive_header_data(void *data, void *arg)
         efree(hkey);
     }
 }
+static int find_server_var(char *key, int key_size, void **ret) 
+{
+
+#if PHP_MAJOR_VERSION < 7
+    zval **server = (zval **)&PG(http_globals)[TRACK_VARS_SERVER];
+    return pt_zend_hash_zval_find(Z_ARRVAL_P(*server), key, key_size, ret);
+#else 
+    zval *server = &PG(http_globals)[TRACK_VARS_SERVER];
+    return pt_zend_hash_zval_find(Z_ARRVAL_P(server), key, key_size, ret);
+#endif
+}
 
 /* build chain header */
 void pt_build_chain_header(pt_chain_t *pct)
 {
     char *result;
     pt_chain_header_t *pch = &(pct->pch);
+    if (pch->is_load_header == 1) {
+        return;
+    }
     
     /* local ip */ 
     pt_obtain_local_ip(pch);
 
     /* retrive key from header */
     if (pct->is_cli != 1) {
-        zend_llist *l = &SG(sapi_headers).headers;
-        zend_llist_apply_with_argument(l, retrive_header_data, pch);
+        HashTable *ht = pch->chain_header_key;
+        zval *tmp = NULL;
+        pt_chain_key_t *pck;
+        for(zend_hash_internal_pointer_reset(ht); 
+                zend_hash_has_more_elements(ht) == SUCCESS;
+                zend_hash_move_forward(ht)) {
+            
+            if (pt_zend_hash_get_current_data(ht, (void **)&pck) == SUCCESS) {
+                //if (pck->is_pass != 1) {
+                //    continue;
+                //}
+                if (find_server_var(pck->receive_key, pck->receive_key_len, (void **)&tmp) == SUCCESS) {
+                    if (Z_TYPE_P(tmp) == IS_STRING) {
+                        pck->val = estrdup(Z_STRVAL_P(tmp));
+                    }
+                }
+            }
+        }
+        //zend_llist *l = &SG(sapi_headers).headers;
+        //zend_llist_apply_with_argument(l, retrive_header_data, pch);
     }
-    
+
     if (!pch->trace_id->val) {
        rand64hex(&pch->trace_id->val);
     }
 
     if (!pch->span_id->val) {
-        if (!pch->parent_span_id->val) {
-            pch->span_id->val = estrdup(pch->trace_id->val);
-        } else {
-            rand64hex(&pch->span_id->val);
-        }
+        //if (!pch->parent_span_id->val) {
+        //    pch->span_id->val = estrdup(pch->trace_id->val);
+        //} else {
+        rand64hex(&pch->span_id->val);
+        //}
     }
 
     /* todo control sampled */
@@ -186,6 +228,8 @@ void pt_build_chain_header(pt_chain_t *pct)
     if (!pch->flags->val) {
         pch->flags->val = estrdup("0");
     }
+
+    pch->is_load_header = 1;
 
     /* trace id */ 
     /*
@@ -218,19 +262,53 @@ void pt_build_chain_header(pt_chain_t *pct)
     */
 }
 
+/* add http header */
+void build_http_header(pt_chain_t *pct, zval *header, char *span_id)
+{
+    pt_chain_key_t *pck = NULL;
+    if (Z_TYPE_P(header) == IS_ARRAY) {
+        HashTable *ht = pct->pch.chain_header_key;
+        for(zend_hash_internal_pointer_reset(ht); 
+                zend_hash_has_more_elements(ht) == SUCCESS;
+                zend_hash_move_forward(ht)) {
+            
+            if (pt_zend_hash_get_current_data(ht, (void **)&pck) == SUCCESS) {
+                if (pck->is_pass != 1) {
+                    continue;
+                }
+
+                char *pass_value;
+                int value_size;
+                char *value;
+                if (span_id != NULL && strcmp(pck->name, "span_id") == 0) {
+                    value = span_id;
+                } else {
+                    value = pck->val;
+                }
+                value_size = strlen(pck->pass_key) + sizeof(": ") - 1 + strlen(value) + 1;
+                pass_value = emalloc(value_size);
+                snprintf(pass_value, value_size, "%s: %s", pck->pass_key, value);
+                pass_value[value_size - 1] = '\0';
+                pt_add_next_index_string(header, pass_value, 1);
+                efree(pass_value);
+            }
+        }
+    }
+}
+
 /* init chain header */
 void pt_init_chain_header(pt_chain_header_t *pch)
 {
+    pch->is_load_header = 0;
     ALLOC_HASHTABLE(pch->chain_header_key);
-
     zend_hash_init(pch->chain_header_key, 8, NULL,  pt_key_destory_func, 0);
    
     /* chain header */
     /* trace id */
     pt_chain_key_t *trace_id = (pt_chain_key_t *)emalloc(sizeof(pt_chain_key_t));
     trace_id->name = "trace_id";
-    trace_id->receive_key = CHAIN_HEADER_TRACE_ID;
-    trace_id->receive_key_len = sizeof(CHAIN_HEADER_TRACE_ID) - 1;
+    trace_id->receive_key = CHAIN_REC_TRACE_ID;
+    trace_id->receive_key_len = sizeof(CHAIN_REC_TRACE_ID);
     trace_id->pass_key = CHAIN_HEADER_TRACE_ID;
     trace_id->is_pass = 1;
     trace_id->val = NULL;
@@ -240,7 +318,7 @@ void pt_init_chain_header(pt_chain_header_t *pch)
     pt_chain_key_t *span_id = (pt_chain_key_t *)emalloc(sizeof(pt_chain_key_t));
     span_id->name = "span_id";
     span_id->receive_key = "none";
-    span_id->receive_key_len = 0;
+    span_id->receive_key_len = sizeof("none");
     span_id->pass_key = CHAIN_HEADER_SPAN_ID;
     span_id->is_pass = 1;
     span_id->val = NULL;
@@ -249,8 +327,8 @@ void pt_init_chain_header(pt_chain_header_t *pch)
     /* parent_span_id */
     pt_chain_key_t *parent_span_id = (pt_chain_key_t *)emalloc(sizeof(pt_chain_key_t));
     parent_span_id->name = "parent_span_id";
-    parent_span_id->receive_key = CHAIN_HEADER_PARENT_SPAN_ID;
-    parent_span_id->receive_key_len = sizeof(CHAIN_HEADER_PARENT_SPAN_ID) - 1;
+    parent_span_id->receive_key = CHAIN_REC_SPAN_ID;
+    parent_span_id->receive_key_len = sizeof(CHAIN_REC_SPAN_ID);
     parent_span_id->pass_key = "";
     parent_span_id->is_pass = 0;
     parent_span_id->val = NULL;
@@ -259,8 +337,8 @@ void pt_init_chain_header(pt_chain_header_t *pch)
     /* sampled */
     pt_chain_key_t *sampled = (pt_chain_key_t *)emalloc(sizeof(pt_chain_key_t));
     sampled->name = "sampled";
-    sampled->receive_key = CHAIN_HEADER_SAMPLED;
-    sampled->receive_key_len = sizeof(CHAIN_HEADER_SAMPLED) - 1;
+    sampled->receive_key = CHAIN_REC_SAMPLED;
+    sampled->receive_key_len = sizeof(CHAIN_REC_SAMPLED);
     sampled->pass_key = CHAIN_HEADER_SAMPLED;
     sampled->is_pass = 1;
     sampled->val = NULL;
@@ -269,8 +347,8 @@ void pt_init_chain_header(pt_chain_header_t *pch)
     /* flags */
     pt_chain_key_t *flags = (pt_chain_key_t *)emalloc(sizeof(pt_chain_key_t));
     flags->name = "flags";
-    flags->receive_key = CHAIN_HEADER_FLAGS;
-    flags->receive_key_len = sizeof(CHAIN_HEADER_FLAGS) - 1;
+    flags->receive_key = CHAIN_REC_FLAGS;
+    flags->receive_key_len = sizeof(CHAIN_REC_FLAGS);
     flags->pass_key = CHAIN_HEADER_FLAGS;
     flags->is_pass = 1;
     flags->val = NULL;
@@ -292,19 +370,25 @@ void pt_chain_header_dtor(pt_chain_header_t *pch)
 }
 
 /* pt chain ctor */
-void pt_chain_ctor(pt_chain_t *pct, pt_chain_log_t *pcl)
+void pt_chain_ctor(pt_chain_t *pct, pt_chain_log_t *pcl, char *service_name)
 {
     pct->pcl = pcl;
-    pt_intercept_ctor(&(pct->pit), pct);    
+    //pt_intercept_ctor(&(pct->pit), pct);    
+
+    /* service name */
+    pct->service_name = service_name;
 
     /* execute time */
-    pct->execute_begin_time = (long) SG(global_request_time) * 1000000.00;
+    //pct->execute_begin_time = (long) SG(global_request_time) * 1000000.00;
+    pct->execute_begin_time = pt_time_usec();
     pct->execute_end_time = 0;
     
     /* http request */
     pct->sapi = sapi_module.name;
     pct->method = (char *) SG(request_info).request_method;
-    pct->script = SG(request_info).path_translated;
+    if (SG(request_info).path_translated != NULL) {
+        pct->script = estrdup(SG(request_info).path_translated);
+    }
     pct->request_uri = SG(request_info).request_uri;
     pct->query_string = SG(request_info).query_string;
     
@@ -321,7 +405,7 @@ void pt_chain_ctor(pt_chain_t *pct, pt_chain_log_t *pcl)
 
     /* build chain header */
     pt_init_chain_header(&(pct->pch));
-    pt_build_chain_header(pct);
+    //pt_build_chain_header(pct);
 }
 
 /* chain rebuild url attach trace id and so on */
@@ -337,15 +421,54 @@ char *pt_rebuild_url(pt_chain_t *pct, char *ori_url)
 void pt_chain_dtor(pt_chain_t *pct)
 {
     /* execute end time */
+    /*
     struct timeval tp = {0};
-    if (!gettimeofday(&tp, NULL)) {
-        pct->execute_end_time = (long)(tp.tv_sec + tp.tv_usec);
+    if (gettimeofday(&tp, NULL) == 0) {
+        pct->execute_end_time = (long)(tp.tv_sec * 1000000 + tp.tv_usec);
     } else {
-        pct->execute_end_time = (long)time(0);
+        pct->execute_end_time = (long)time(0) * 1000000;
     }
-    
+    */
+
+    pt_build_chain_header(pct);
+    pct->execute_end_time = pt_time_usec();
+
+    /* add main span */
+    zval *span;
+    if (pct->method == NULL) {
+        build_main_span(&span, pct->pch.trace_id->val, (char *)pct->sapi, pct->pch.span_id->val, pct->pch.parent_span_id->val, pct->execute_begin_time, pct->execute_end_time - pct->execute_begin_time); 
+    } else {
+        build_main_span(&span, pct->pch.trace_id->val, (char *)pct->method, pct->pch.span_id->val, pct->pch.parent_span_id->val, pct->execute_begin_time, pct->execute_end_time - pct->execute_begin_time); 
+    }
+    add_span_annotation(span, "sr", pct->execute_begin_time, pct->service_name,  pct->pch.ip, pct->pch.port);   
+    add_span_annotation(span, "ss", pct->execute_end_time, pct->service_name,  pct->pch.ip, pct->pch.port);   
+
+    if (pct->request_uri != NULL) {
+        add_span_bannotation(span, "http.url", pct->request_uri, pct->service_name, pct->pch.ip, pct->pch.port);
+    }
+
+    if (pct->script != NULL) {
+        add_span_bannotation(span, "script", pct->script, pct->service_name, pct->pch.ip, pct->pch.port);
+        efree(pct->script);
+    }
+
+    if (pct->is_cli == 1 && pct->argc > 1) {
+        int i = 1;
+        char argv[1024];
+        bzero(argv, 1024);
+        for(;i < pct->argc; i++) {
+            strcat(argv, pct->argv[i]);
+            strcat(argv, ",");
+        }
+        argv[1023] = '\0';
+        add_span_bannotation(span, "argv", argv, pct->service_name, pct->pch.ip, pct->pch.port);
+    }
+
+
+    pt_chain_add_span(pct->pcl, span);
+
     /* header dtor */
     pt_chain_header_dtor(&(pct->pch));
 
-    pt_intercept_dtor(&(pct->pit));
+    //pt_intercept_dtor(&(pct->pit));
 }
