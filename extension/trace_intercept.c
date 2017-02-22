@@ -102,11 +102,8 @@ void add_span_annotation(zval *span, const char *value, long timestamp, char *se
 
 void add_span_annotation_intercept(zval *span, const char *value, long timestamp, struct pt_chain_st *pct)
 {
-    //char *full_service_name = build_service_name(pct, service_name);
     add_span_annotation(span, value, timestamp, pct->service_name, pct->pch.ip, pct->pch.port);
-    //efree(full_service_name);
 }
-
 
 void add_span_bannotation(zval *span, const char *key, const char *value, char *service_name, char *ipv4, long port)
 {
@@ -288,6 +285,7 @@ static zval *build_com_record(pt_interceptor_t *pit, pt_frame_t *frame, int add_
     return span;
 }
 
+/***********************curl_init********************************/
 static void curl_init_record(pt_interceptor_t *pit, pt_frame_t *frame)
 {
     zval *ret = frame->ori_ret;
@@ -300,6 +298,7 @@ static void curl_init_record(pt_interceptor_t *pit, pt_frame_t *frame)
     }
 }
 
+/********************curl_multi_add_handle*************************/
 static void curl_multi_add_handle_record(pt_interceptor_t *pit, pt_frame_t *frame)
 {
     zval *ret = frame->ori_ret;
@@ -625,6 +624,7 @@ static zend_bool pdo_hit(char *class_name, char *function_name)
     return 0;
 }
 
+
 #if PHP_MAJOR_VERSION < 7                                                                                                       
 #define GET_PDO_DBH  pdo_dbh_t *dbh = zend_object_store_get_object(object);                                                                                  
 #else                                                                                                                               
@@ -660,11 +660,11 @@ static zend_bool pdo_hit(char *class_name, char *function_name)
 #define SET_PDO_RECORD(keyword) do {                                                                                                            \
     if (strcmp(frame->function, #keyword) == 0) {                                                                                               \
         build_main_span_intercept(&span, #keyword, pit->pct, frame);                                                                            \
-        add_span_annotation_intercept(span, "cs", frame->entry_time, pit->pct);                                                       \
-        add_span_annotation_intercept(span, "cr", frame->exit_time, pit->pct);                                                        \
-        add_span_bannotation_intercept(span, "PDO."#keyword, RETURN_Z_STRING(fir_arg), pit->pct);                   \
+        add_span_annotation_intercept(span, "cs", frame->entry_time, pit->pct);                                                                 \
+        add_span_annotation_intercept(span, "cr", frame->exit_time, pit->pct);                                                                  \
+        add_span_bannotation_intercept(span, "PDO."#keyword, RETURN_Z_STRING(fir_arg), pit->pct);                                               \
         GET_PDO_DBH                                                                                                                             \
-        add_span_bannotation_intercept(span, "sa", dbh->data_source, pit->pct);                               \
+        add_span_bannotation_intercept(span, "sa", dbh->data_source, pit->pct);                                                                 \
         zval *ret = frame->ori_ret;                                                                                                             \
         if (ret != NULL && PT_Z_TYPE_P(ret) == IS_FALSE) {                                                                                      \
             zval ret;                                                                                                                           \
@@ -673,19 +673,20 @@ static zend_bool pdo_hit(char *class_name, char *function_name)
             if (pt_call_user_function(NULL, &object, &function, &ret, 0, NULL) == SUCCESS) {                                                    \
                 zval *error_msg;                                                                                                                \
                 if ((Z_TYPE(ret) == IS_ARRAY) &&  (pt_zend_hash_index_find(Z_ARRVAL(ret), 2, (void **)&error_msg) == SUCCESS)) {                \
-                    add_span_bannotation_intercept(span, "error", Z_STRVAL_P(error_msg), pit->pct);           \
+                    add_span_bannotation_intercept(span, "error", Z_STRVAL_P(error_msg), pit->pct);                                             \
                 } else {                                                                                                                        \
-                    add_span_bannotation_intercept(span, "error", "unknown", pit->pct);                       \
+                    add_span_bannotation_intercept(span, "error", "unknown", pit->pct);                                                         \
                 }                                                                                                                               \
             }                                                                                                                                   \
             pt_zval_dtor(&function);                                                                                                            \
             pt_zval_dtor(&ret);                                                                                                                 \
         }                                                                                                                                       \
-        PDO_SET_EXCEPTION(pit->pct->service_name, pit->pct->pch.ip, pit->pct->pch.port);                                                                \
+        PDO_SET_EXCEPTION(pit->pct->service_name, pit->pct->pch.ip, pit->pct->pch.port);                                                        \
         pt_chain_add_span(pit->pct->pcl, span);                                                                                                 \
     }                                                                                                                                           \
 }while(0)
 
+/****************************pdo**********************/
 static void pdo_record(pt_interceptor_t *pit, pt_frame_t *frame)
 {
     zval *object = frame->object;    
@@ -775,7 +776,7 @@ static zend_bool redis_hit(char *class_name, char *function_name)
     char *key = (char *)emalloc(size);                                                                          \
     memset(key, 0x00, size);                                                                                    \
     strncpy(key, #MODULE, sizeof(#MODULE) - 1);                                                                 \
-    key = strcat(key, "::");                                                                                     \
+    key = strcat(key, "::");                                                                                    \
     key = strcat(key, frame->function);                                                                         \
     char *value = convert_args_to_string(frame);                                                                \
     add_span_bannotation_intercept(span, key, value, pit->pct);                                                 \
@@ -1014,6 +1015,7 @@ static void mysqli_stmt_common_record(pt_interceptor_t *pit, pt_frame_t *frame)
     pt_chain_add_span(pit->pct->pcl, span);
 }
 
+/********************predis***********************************/
 static zend_bool predis_hit(char *class_name, char *function_name)
 {
     if (strcmp(function_name, "__call") == 0) {

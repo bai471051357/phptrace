@@ -945,10 +945,10 @@ static void frame_set_retval(pt_frame_t *frame, zend_bool internal, zend_execute
 
     if (retval) {
         frame->retval = repr_zval(retval, 32 TSRMLS_CC);
-    }
 #ifdef TRACE_CHAIN
         frame->ori_ret = retval;
 #endif
+    }
 }
 #endif
 
@@ -1355,7 +1355,7 @@ ZEND_API void pt_execute_core(int internal, zend_execute_data *execute_data, zva
 
 #ifdef TRACE_CHAIN
         if (match_intercept) {
-            pt_build_chain_header(&PTG(pct));
+            //pt_build_chain_header(&PTG(pct));
             i_ele->capture == NULL ? NULL : i_ele->capture(&PTG(pit), &frame);  
         }
 #endif

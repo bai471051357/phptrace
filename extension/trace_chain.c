@@ -130,11 +130,12 @@ static void pt_obtain_local_ip(pt_chain_header_t *pch)
                 if ((strncasecmp(buf, "10", 2) == 0) ||
                     (strncasecmp(buf, "192", 3) == 0)) {
                     strncpy(pch->ip, buf, INET_ADDRSTRLEN);
-                    return;
+                    break;
                 }
             }
         }
     }
+    freeifaddrs(myaddrs);
 }
 
 /* retrive header data */
@@ -162,7 +163,9 @@ static void retrive_header_data(void *data, void *arg)
 }
 static int find_server_var(char *key, int key_size, void **ret) 
 {
-
+    if (PG(auto_globals_jit)) {
+        pt_zend_is_auto_global("_SERVER", sizeof("_SERVER")-1);
+    }
 #if PHP_MAJOR_VERSION < 7
     zval **server = (zval **)&PG(http_globals)[TRACK_VARS_SERVER];
     return pt_zend_hash_zval_find(Z_ARRVAL_P(*server), key, key_size, ret);
@@ -194,9 +197,6 @@ void pt_build_chain_header(pt_chain_t *pct)
                 zend_hash_move_forward(ht)) {
             
             if (pt_zend_hash_get_current_data(ht, (void **)&pck) == SUCCESS) {
-                //if (pck->is_pass != 1) {
-                //    continue;
-                //}
                 if (find_server_var(pck->receive_key, pck->receive_key_len, (void **)&tmp) == SUCCESS) {
                     if (Z_TYPE_P(tmp) == IS_STRING) {
                         pck->val = estrdup(Z_STRVAL_P(tmp));
@@ -230,36 +230,6 @@ void pt_build_chain_header(pt_chain_t *pct)
     }
 
     pch->is_load_header = 1;
-
-    /* trace id */ 
-    /*
-    pt_chain_key_t *trace_id = pch->trace_id;
-    result = pt_sub_query_key(query_string, trace_id->receive_key);
-    if (result == NULL) {
-        pt_gen_trace_id(pch, trace_id, query_string);
-    }  else {
-        trace_id->val = result;
-    }
-    */
-
-    /* parent span id */
-    /*
-    result = pt_sub_query_key(query_string, pch->parent_span_id->receive_key);
-    if (result == NULL) { 
-        pch->parent_span_id->val = (char *)malloc(sizeof(PT_DEFAULT_ID));
-        memset(pch->parent_span_id->val, 0, sizeof(PT_DEFAULT_ID));
-        strncpy(pch->parent_span_id->val, PT_DEFAULT_ID, strlen(PT_DEFAULT_ID)); 
-    } else {
-        pch->parent_span_id->val = result;
-    }
-    */
-
-    /* span id */
-    /*
-        pch->span_id->val = (char *)malloc(sizeof(PT_DEFAULT_ID));
-        memset(pch->span_id->val, 0, sizeof(PT_DEFAULT_ID));
-    strncpy(pch->span_id->val, PT_DEFAULT_ID, strlen(PT_DEFAULT_ID)); 
-    */
 }
 
 /* add http header */
@@ -405,7 +375,7 @@ void pt_chain_ctor(pt_chain_t *pct, pt_chain_log_t *pcl, char *service_name)
 
     /* build chain header */
     pt_init_chain_header(&(pct->pch));
-    //pt_build_chain_header(pct);
+    pt_build_chain_header(pct);
 }
 
 /* chain rebuild url attach trace id and so on */
@@ -469,6 +439,4 @@ void pt_chain_dtor(pt_chain_t *pct)
 
     /* header dtor */
     pt_chain_header_dtor(&(pct->pch));
-
-    //pt_intercept_dtor(&(pct->pit));
 }

@@ -50,6 +50,7 @@
 #define pt_zval_dtor            zval_dtor
 #define pt_call_user_function   call_user_function
 #define pt_zend_read_property   zend_read_property
+#define pt_zend_is_auto_global  zend_is_auto_global
 
 static inline int PT_Z_TYPE_P(zval *z)
 {
@@ -138,6 +139,9 @@ static inline int pt_zend_hash_get_current_data(HashTable *ht, void **v)
 #define PT_Z_TYPE_PP(z)    Z_TYPE_P(*z)
 
 #define PT_PHP_MAX_PARAMS_NUM   20
+
+#define pt_zend_is_auto_global zend_is_auto_global_str
+
 static inline int pt_call_user_function(HashTable *ht, zval **obj, zval *function_name, zval *retval_ptr, uint32_t param_count, zval **params) 
 {
     zval pass_params[PT_PHP_MAX_PARAMS_NUM];
