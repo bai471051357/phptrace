@@ -218,7 +218,7 @@ static char *convert_args_to_string(pt_frame_t *frame)
 #define ARGS_ELLIPSIS "..."
 #define ARGS_ELLIPSIS_LEN (sizeof("...") - 1)
 #define ARGS_REAL_LEN (ARGS_MAX_LEN - ARGS_ELLIPSIS_LEN - 1)
-
+    build_args_param(frame);  
     char *string = emalloc(ARGS_MAX_LEN);
     int real_len = 0;
     memset(string, 0x00, ARGS_MAX_LEN);
@@ -253,11 +253,11 @@ static zval *build_com_record(pt_interceptor_t *pit, pt_frame_t *frame, int add_
     char *name;
     int name_len = 0;
     if (frame->class != NULL) {
-        name_len += sdslen(frame->class);
+        name_len += strlen(frame->class);
     }
 
     if (frame->function != NULL) {
-        name_len += sdslen(frame->function);
+        name_len += strlen(frame->function);
     }
     name_len += 5;
 
@@ -772,7 +772,7 @@ static zend_bool redis_hit(char *class_name, char *function_name)
 }
 
 #define INIT_BANNOTATION_PARAM(MODULE)                                                                          \
-    int size = sizeof(#MODULE) + sdslen(frame->function) + 2;                                                   \
+    int size = sizeof(#MODULE) + strlen(frame->function) + 2;                                                   \
     char *key = (char *)emalloc(size);                                                                          \
     memset(key, 0x00, size);                                                                                    \
     strncpy(key, #MODULE, sizeof(#MODULE) - 1);                                                                 \

@@ -18,6 +18,7 @@
 #define TRACE_UTIL_H
 
 #include <stdint.h>
+#include "trace_type.h"
 
 #define CHAIN_HEADER_PREFIX "X-W-"
 #define CHAIN_HEADER_PREFIX_LEN (sizeof(CHAIN_HEADER_PREFIX) - 1)
@@ -43,5 +44,8 @@ uint64_t rand_uint64(void);
 void b2hex(char **output, const unsigned char *input, int input_len);
 void bin2hex64(char **output, const uint64_t *input);
 void ran64hex(char **output);
+void build_args_param(pt_frame_t *frame);
+void build_file_line_info(pt_frame_t *frame);
+sds repr_zval(zval *zv, int limit TSRMLS_DC);
 
 #endif

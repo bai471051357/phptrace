@@ -87,8 +87,8 @@ typedef struct {
     uint8_t type;               /* frame type, entry or exit */
     uint8_t functype;           /* function flags of PT_FUNC_xxx */
 
-    //uint32_t lineno;          /* entry lineno */
-    //sds filename;             /* entry filename */
+    uint32_t lineno;          /* entry lineno */
+    sds filename;             /* entry filename */
     sds class;                  /* class name */
     sds function;               /* function name */
     uint32_t level;             /* nesting level */

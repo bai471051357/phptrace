@@ -67,7 +67,6 @@ static int frame_send(pt_frame_t *frame TSRMLS_DC);
 static void frame_set_retval(pt_frame_t *frame, zend_bool internal, zend_execute_data *ex, zend_fcall_info *fci TSRMLS_DC);
 #endif
 
-static sds repr_zval(zval *zv, int limit TSRMLS_DC);
 static void handle_error(TSRMLS_D);
 static void handle_command(void);
 
@@ -322,96 +321,20 @@ static inline zend_function *obtain_zend_function(zend_bool internal, zend_execu
 }
 
 /**
- * Trace Load func and class name
+ * Trace build args
  * --------------------- 
  */
-static void load_class_func_name(pt_frame_t *frame)
+
+static void build_origin_param(pt_frame_t *frame)
 {
-     
-}
-
-/**
- * Trace Manipulation of Frame
- * --------------------
- */
-static void frame_build(pt_frame_t *frame, zend_bool internal, unsigned char type, zend_execute_data *caller, zend_execute_data *ex, zend_op_array *op_array TSRMLS_DC)
-{
-    unsigned int i;
-    zval **args;
-    zend_function *zf;
-
-    /* init */
-    memset(frame, 0, sizeof(pt_frame_t));
-
-#if PHP_VERSION_ID < 50500
-    if (internal || ex) {
-        op_array = ex->op_array;
-    }
-#endif
-
-    /* load origin data */
-    frame->internal = internal;
-    frame->caller = caller;
-    frame->ex = ex;
-    frame->op_array = op_array;
-
-    /* zend function */
-    zf = obtain_zend_function(internal, ex, op_array);
-
-    /* types, level */
-    frame->type = type;
-    frame->functype = internal ? PT_FUNC_INTERNAL : 0x00;
-    frame->level = PTG(level);
-
-    /* args init */
-    args = NULL;
-    frame->arg_count = 0;
-    frame->args = NULL;
-    frame->function = NULL;
-    frame->class = NULL;
-
     /* names */
-    if (zf->common.function_name) {
-        /* functype, class name */
-#if PHP_VERSION_ID < 70000
-        if (caller && P7_EX_OBJ(caller)) {
-#else
-        if (ex && P7_EX_OBJ(ex)) {
-#endif
-            frame->functype |= PT_FUNC_MEMBER;
-            /* User care about which method is called exactly, so use
-             * zf->common.scope->name instead of ex->object->name. */
-            if (zf->common.scope) {
-                frame->class = sdsnew(P7_STR(zf->common.scope->name));
-            } else {
-                /* TODO zend uses zend_get_object_classname() in
-                 * debug_print_backtrace() */
-                php_error(E_WARNING, "Trace catch a entry with ex->object but without zf->common.scope");
-            }
-        } else if (zf->common.scope) {
-            frame->functype |= PT_FUNC_STATIC;
-            frame->class = sdsnew(P7_STR(zf->common.scope->name));
-        } else {
-            frame->functype |= PT_FUNC_NORMAL;
-        }
+    if (frame->function) {
 
-        /* function name */
-        if (strcmp(P7_STR(zf->common.function_name), "{closure}") == 0) {
-            frame->function = sdscatprintf(sdsempty(), "{closure:%s:%d-%d}", P7_STR(zf->op_array.filename), zf->op_array.line_start, zf->op_array.line_end);
-        } else if (strcmp(P7_STR(zf->common.function_name), "__lambda_func") == 0) {
-            frame->function = sdscatprintf(sdsempty(), "{lambda:%s}", P7_STR(zf->op_array.filename));
-#if PHP_VERSION_ID >= 50414
-        } else if (zf->common.scope && zf->common.scope->trait_aliases) {
-            /* Use trait alias instead real function name.
-             * There is also a bug "#64239 Debug backtrace changed behavior
-             * since 5.4.10 or 5.4.11" about this
-             * https://bugs.php.net/bug.php?id=64239.*/
-            frame->function = sdsnew(P7_STR(zend_resolve_method_name(P7_EX_OBJ(ex) ? P7_EX_OBJCE(ex) : zf->common.scope, zf)));
-#endif
-        } else {
-            frame->function = sdsnew(P7_STR(zf->common.function_name));
-        }
+        zend_execute_data *ex = frame->ex;
+        zend_execute_data *caller = frame->caller;
+        zval **args;
 
+        frame->object = P7_EX_OBJ_ZVAL(ex);
         /* args */
 #if PHP_VERSION_ID < 50300
         /* TODO support fetching arguments in backtrace */
@@ -427,164 +350,87 @@ static void frame_build(pt_frame_t *frame, zend_bool internal, unsigned char typ
 #else
         frame->arg_count = ZEND_CALL_NUM_ARGS(ex);
 #endif
-        if (frame->arg_count > 0) {
-            frame->args = calloc(frame->arg_count, sizeof(sds));
-        }
-
-        frame->object = P7_EX_OBJ_ZVAL(ex);
 
 #if PHP_VERSION_ID < 70000
-        for (i = 0; i < frame->arg_count; i++) {
-            frame->args[i] = repr_zval(args[i], 32 TSRMLS_CC);
-        }
         frame->ori_args = args;
 #else
         if (frame->arg_count) {
-            i = 0;
             zval *p = ZEND_CALL_ARG(ex, 1);
             if (ex->func->type == ZEND_USER_FUNCTION) {
                 uint32_t first_extra_arg = ex->func->op_array.num_args;
 
                 if (first_extra_arg && frame->arg_count > first_extra_arg) {
-                    while (i < first_extra_arg) {
-                        frame->args[i++] = repr_zval(p++, 32);
-                    }
                     p = ZEND_CALL_VAR_NUM(ex, ex->func->op_array.last_var + ex->func->op_array.T);
                 }
             }
             frame->ori_args = p;
-            while(i < frame->arg_count) {
-                frame->args[i++] = repr_zval(p++, 32);
-            }
         }
 #endif
-
-    } else {
-        int add_filename = 1;
-        long ev = 0;
-
-#if ZEND_EXTENSION_API_NO < 220100525
-        if (caller) {
-            ev = caller->opline->op2.u.constant.value.lval;
-        } else if (op_array && op_array->opcodes) {
-            ev = op_array->opcodes->op2.u.constant.value.lval;
-        }
-#elif PHP_VERSION_ID < 70000
-        if (caller) {
-            ev = caller->opline->extended_value;
-        } else if (op_array && op_array->opcodes) {
-            ev = op_array->opcodes->extended_value;
-        }
-#else
-        if (caller && caller->opline) {
-            ev = caller->opline->extended_value;
-        }
-#endif
-
-        /* special user function */
-        switch (ev) {
-            case ZEND_INCLUDE_ONCE:
-                frame->functype |= PT_FUNC_INCLUDE_ONCE;
-                frame->function = "include_once";
-                break;
-            case ZEND_REQUIRE_ONCE:
-                frame->functype |= PT_FUNC_REQUIRE_ONCE;
-                frame->function = "require_once";
-                break;
-            case ZEND_INCLUDE:
-                frame->functype |= PT_FUNC_INCLUDE;
-                frame->function = "include";
-                break;
-            case ZEND_REQUIRE:
-                frame->functype |= PT_FUNC_REQUIRE;
-                frame->function = "require";
-                break;
-            case ZEND_EVAL:
-                frame->functype |= PT_FUNC_EVAL;
-                frame->function = "{eval}"; /* TODO add eval code */
-                add_filename = 0;
-                break;
-            default:
-                /* should be function main */
-                frame->functype |= PT_FUNC_NORMAL;
-                frame->function = "{main}";
-                add_filename = 0;
-                break;
-        }
-        frame->function = sdsnew(frame->function);
-        if (add_filename) {
-            frame->arg_count = 1;
-            frame->args = calloc(frame->arg_count, sizeof(sds));
-            frame->args[0] = sdscatrepr(sdsempty(), P7_STR(zf->op_array.filename), strlen(P7_STR(zf->op_array.filename)));
-        }
     }
 
-#if PHP_VERSION_ID >= 70000
-    /* FIXME Sometimes execute_data->opline can be a interger NOT pointer.
-     * I dont know how to handle it, this just make it works. */
-    //if (caller && caller->opline && caller->prev_execute_data &&
-    //        caller->func && caller->func->op_array.opcodes == NULL) {
-    //    caller = caller->prev_execute_data;
-    //}
-
-    ///* skip internal handler */
-    //if (caller && caller->opline && caller->prev_execute_data &&
-    //        caller->opline->opcode != ZEND_DO_FCALL &&
-    //        caller->opline->opcode != ZEND_DO_ICALL &&
-    //        caller->opline->opcode != ZEND_DO_UCALL &&
-    //        caller->opline->opcode != ZEND_DO_FCALL_BY_NAME &&
-    //        caller->opline->opcode != ZEND_INCLUDE_OR_EVAL) {
-    //    caller = caller->prev_execute_data;
-    //}
-#endif
-
-    /* lineno
-     * The method we try to detect line number and filename is different
-     * between Zend's debug_backtrace().
-     * Because 1. Performance, so we won't use loop to find the valid op_array.
-     * 2. And still want to catch internal function call, such as
-     * call_user_func().  */
-    //if (caller && caller->opline) {
-    //    frame->lineno = caller->opline->lineno;
-    //} else if (caller && caller->prev_execute_data && caller->prev_execute_data->opline) {
-    //    frame->lineno = caller->prev_execute_data->opline->lineno; /* try using prev */
-    //} else if (op_array && op_array->opcodes) {
-    //    frame->lineno = op_array->opcodes->lineno;
-    ///* Uncomment to use definition lineno if entry lineno is null, but we won't :P
-    // * } else if (caller != EG(current_execute_data) && EG(current_execute_data)->opline) {
-    // *     frame->lineno = EG(current_execute_data)->opline->lineno; [> try using current <]
-    // */
-    //} else {
-    //    frame->lineno = 0;
-    //}
-
-    /* filename */
-#if PHP_VERSION_ID < 70000
-    //if (caller && caller->op_array) {
-    //    op_array = caller->op_array;
-    //} else if (caller && caller->prev_execute_data && caller->prev_execute_data->op_array) {
-    //    op_array = caller->prev_execute_data->op_array; /* try using prev */
-    //}
-#else
-    //if (caller->func && ZEND_USER_CODE(caller->func->common.type)) {
-    //    op_array = &(caller->func->op_array);
-    //} else if (caller->prev_execute_data && caller->prev_execute_data->func &&
-    //        ZEND_USER_CODE(caller->prev_execute_data->func->common.type)) {
-    //    op_array = &(caller->prev_execute_data->func->op_array); /* try using prev */
-    //}
-#endif
-
-    /* Same as upper
-     * } else if (caller != EG(current_execute_data) && EG(current_execute_data)->op_array) {
-     *     op_array = EG(current_execute_data)->op_array [> try using current <]
-     * }
-     */
-    //if (op_array) {
-    //    frame->filename = sdsnew(P7_STR(op_array->filename));
-    //} else {
-    //    frame->filename = NULL;
-    //}
     rand64hex(&frame->span_id);
+}
+
+/**
+ * Trace Build Class Function
+ * --------------------
+ */
+static void build_class_function(zend_bool internal, zend_execute_data *ex, zend_op_array *op_array, char **function, char **class TSRMLS_DC)
+{
+#if PHP_VERSION_ID < 50500
+    if (internal || ex) {
+        op_array = ex->op_array;
+    }
+#endif
+
+    zend_function *zf;
+
+    zf = obtain_zend_function(internal, ex, op_array);
+
+    /* chain get function name for simple one, here can change easy*/
+    if (zf->common.scope != NULL && zf->common.scope->name != NULL) {
+        *class = P7_STR(zf->common.scope->name);
+    }
+
+    if (zf->common.function_name != NULL) {
+        *function = P7_STR(zf->common.function_name);
+    }
+}
+
+/**
+ * Trace Manipulation of Frame
+ * --------------------
+ */
+static void frame_build(pt_frame_t *frame, zend_bool internal, unsigned char type, zend_execute_data *caller, zend_execute_data *ex, zend_op_array *op_array TSRMLS_DC)
+{
+    /* init */
+    memset(frame, 0, sizeof(pt_frame_t));
+
+#if PHP_VERSION_ID < 50500
+    if (internal || ex) {
+        op_array = ex->op_array;
+    }
+#endif
+
+    /* load origin data */
+    frame->internal = internal;
+    frame->caller = caller;
+    frame->ex = ex;
+    frame->op_array = op_array;
+
+    /* types, level */
+    frame->type = type;
+    frame->functype = internal ? PT_FUNC_INTERNAL : 0x00;
+    frame->level = PTG(level);
+
+    /* args init */
+    frame->arg_count = 0;
+    frame->args = NULL;
+    frame->function = NULL;
+    frame->class = NULL;
+
+    build_class_function(internal, ex, op_array, &frame->function, &frame->class);
+    build_origin_param(frame);
 }
 
 #if PHP_VERSION_ID < 70000
@@ -624,82 +470,6 @@ static void frame_set_retval(pt_frame_t *frame, zend_bool internal, zend_execute
 }
 #endif
 
-/**
- * Trace Misc Function
- * --------------------
- */
-static sds repr_zval(zval *zv, int limit TSRMLS_DC)
-{
-    int tlen = 0;
-    char buf[256], *tstr = NULL;
-    sds result;
-
-#if PHP_VERSION_ID >= 70000
-    zend_string *class_name;
-#endif
-
-    /* php_var_export_ex is a good example */
-    switch (Z_TYPE_P(zv)) {
-#if PHP_VERSION_ID < 70000
-        case IS_BOOL:
-            if (Z_LVAL_P(zv)) {
-                return sdsnew("true");
-            } else {
-                return sdsnew("false");
-            }
-#else
-        case IS_TRUE:
-            return sdsnew("true");
-        case IS_FALSE:
-            return sdsnew("false");
-#endif
-        case IS_NULL:
-            return sdsnew("NULL");
-        case IS_LONG:
-            snprintf(buf, sizeof(buf), "%ld", Z_LVAL_P(zv));
-            return sdsnew(buf);
-        case IS_DOUBLE:
-            snprintf(buf, sizeof(buf), "%.*G", (int) EG(precision), Z_DVAL_P(zv));
-            return sdsnew(buf);
-        case IS_STRING:
-            tlen = (limit <= 0 || Z_STRLEN_P(zv) < limit) ? Z_STRLEN_P(zv) : limit;
-            result = sdscatrepr(sdsempty(), Z_STRVAL_P(zv), tlen);
-            if (limit > 0 && Z_STRLEN_P(zv) > limit) {
-                result = sdscat(result, "...");
-            }
-            return result;
-        case IS_ARRAY:
-            /* TODO more info */
-            return sdscatprintf(sdsempty(), "array(%d)", zend_hash_num_elements(Z_ARRVAL_P(zv)));
-        case IS_OBJECT:
-#if PHP_VERSION_ID < 70000
-            if (Z_OBJ_HANDLER(*zv, get_class_name)) {
-                Z_OBJ_HANDLER(*zv, get_class_name)(zv, (const char **) &tstr, (zend_uint *) &tlen, 0 TSRMLS_CC);
-                result = sdscatprintf(sdsempty(), "object(%s)#%d", tstr, Z_OBJ_HANDLE_P(zv));
-                efree(tstr);
-            } else {
-                result = sdscatprintf(sdsempty(), "object(unknown)#%d", Z_OBJ_HANDLE_P(zv));
-            }
-#else
-            class_name = Z_OBJ_HANDLER_P(zv, get_class_name)(Z_OBJ_P(zv));
-            result = sdscatprintf(sdsempty(), "object(%s)#%d", P7_STR(class_name), Z_OBJ_HANDLE_P(zv));
-            zend_string_release(class_name);
-#endif
-            return result;
-        case IS_RESOURCE:
-#if PHP_VERSION_ID < 70000
-            tstr = (char *) zend_rsrc_list_get_rsrc_type(Z_LVAL_P(zv) TSRMLS_CC);
-            return sdscatprintf(sdsempty(), "resource(%s)#%ld", tstr ? tstr : "Unknown", Z_LVAL_P(zv));
-#else
-            tstr = (char *) zend_rsrc_list_get_rsrc_type(Z_RES_P(zv) TSRMLS_CC);
-            return sdscatprintf(sdsempty(), "resource(%s)#%d", tstr ? tstr : "Unknown", Z_RES_P(zv)->handle);
-        case IS_UNDEF:
-            return sdsnew("{undef}");
-#endif
-        default:
-            return sdsnew("{unknown}");
-    }
-}
 
 static void handle_error(TSRMLS_D)
 {
@@ -810,19 +580,21 @@ ZEND_API void pt_execute_core(int internal, zend_execute_data *execute_data, zva
      * recursion and sending on exit point will be affected. */
 
     PTG(level)++;
-#if PHP_VERSION_ID < 50500
-    zend_function *zf = obtain_zend_function(internal, execute_data, op_array);
-#else 
-    zend_function *zf = obtain_zend_function(internal, execute_data, NULL);
-#endif
 
     zend_bool match_intercept = 0; 
     pt_interceptor_ele_t *i_ele;
-    char *class_name = (zf->common.scope != NULL && zf->common.scope->name != NULL)  ? P7_STR(zf->common.scope->name) : NULL;
-    char *function_name = zf->common.function_name == NULL ? NULL : P7_STR(zf->common.function_name);
-    match_intercept = pt_intercept_hit(&PTG(pit), &i_ele, class_name, function_name);
+
+    char *function = NULL;
+    char *class = NULL;
+#if PHP_VERSION_ID < 50500
+    build_class_function(internal, execute_data, op_array, &function, &class TSRMLS_CC);
+#else
+    build_class_function(internal, execute_data, NULL, &function, &class TSRMLS_CC);
+#endif
+    match_intercept = pt_intercept_hit(&PTG(pit), &i_ele, class, function);
 
     if (match_intercept) {
+
 #if PHP_VERSION_ID < 50500
         frame_build(&frame, internal, PT_FRAME_ENTRY, caller, execute_data, op_array TSRMLS_CC);
 #else

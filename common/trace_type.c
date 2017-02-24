@@ -131,8 +131,6 @@ void pt_type_destroy_frame(pt_frame_t *frame)
     int i;
 
     sdsfree(frame->filename);
-    sdsfree(frame->class);
-    sdsfree(frame->function);
     if (frame->args && frame->arg_count) {
         for (i = 0; i < frame->arg_count; i++) {
             sdsfree(frame->args[i]);
