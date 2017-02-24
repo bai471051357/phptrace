@@ -33,14 +33,15 @@ void pt_chain_log_ctor(pt_chain_log_t *log, char *log_path)
     log->buf = pemalloc(ALLOC_LOG_SIZE, 1);
     log->total_size = ALLOC_LOG_SIZE;
     log->alloc_size = 0;
+    log->max_size = 0;  //32M
 }
 
 /* ervery request reload file */
 void pt_chain_log_init(pt_chain_log_t *log)
 {
-    memset(log->buf, 0x00, log->total_size);
+    //memset(log->buf, 0x00, log->total_size);
     log->fd = -1;
-    log->alloc_size = 0; 
+    //log->alloc_size = 0; 
     PT_ALLOC_INIT_ZVAL(log->spans);
     array_init(log->spans);
 }
@@ -100,26 +101,28 @@ static int pt_mkdir_recursive(const char *dir)
     return 0;
 }
 
-void pt_chain_log_flush(pt_chain_log_t *log)
+void pt_chain_log_write(pt_chain_log_t *log)
 {
+    if (log->alloc_size <= 0) {
+        return;
+    }
     char *dname; 
     char tmp_path[64];
     char *tmp_dir;
-    ssize_t written_bytes = 0;
+    size_t written_bytes = 0;
 
     time_t raw_time;
     struct tm* time_info;
     char time_format[32];
     memset(time_format, 0x00, 32);
+    memset(tmp_path, 0x00, 64);
     time(&raw_time);
     time_info = localtime(&raw_time);
     strftime(time_format, 32, log->format, time_info);
     sprintf(tmp_path, "%s-%s.log", log->path, time_format);
     tmp_dir = estrdup(tmp_path); 
-    
 
     dname = dirname(tmp_dir);
-    
     if (pt_mkdir_recursive(dname) == -1) {
         CHAIN_ERROR("recursive make dir error [%s]", tmp_path);
         goto end;
@@ -132,6 +135,25 @@ void pt_chain_log_flush(pt_chain_log_t *log)
             goto end;
         }
     }
+    do {
+        if ((written_bytes = write(log->fd, log->buf, log->alloc_size) )== -1) {
+            CHAIN_ERROR("write log error[%d] errstr[%s]", errno, strerror(errno));
+            goto end;
+        }
+        written_bytes += written_bytes;
+    }while(written_bytes < log->alloc_size);
+
+    memset(log->buf, 0x00, log->total_size);
+    log->alloc_size = 0; 
+
+end:
+    close(log->fd);
+    efree(tmp_dir);
+}
+
+
+void pt_chain_log_flush(pt_chain_log_t *log)
+{
     
     /* load span from log */
     zval func;
@@ -161,23 +183,19 @@ void pt_chain_log_flush(pt_chain_log_t *log)
     } else {
         goto end;
     }
-    
-    do {
-        if ((written_bytes = write(log->fd, log->buf, log->alloc_size) )== -1) {
-            CHAIN_ERROR("write log error[%d] errstr[%s]", errno, strerror(errno));
-            goto end;
-        }
-        written_bytes += written_bytes;
-    }while(written_bytes < log->alloc_size);
+
+    if (log->max_size <= log->alloc_size) {
+        pt_chain_log_write(log);
+    }
 
 end:
     pt_zval_dtor(&func);
-    efree(tmp_dir);
     pt_zval_ptr_dtor(&log->spans);
     PT_FREE_ALLOC_ZVAL(log->spans);
 }
 
 void pt_chain_log_dtor(pt_chain_log_t *log)
 {
+    pt_chain_log_write(log);
     pefree(log->buf, 1);
 }

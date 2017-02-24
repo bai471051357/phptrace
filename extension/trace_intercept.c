@@ -133,7 +133,7 @@ static void add_span_bannotation_long_intercept(zval *span, const char *key, lon
     add_span_bannotation_intercept(span, key, (const char*)str, pct);
 }
 
-zend_bool pt_intercept_hit(pt_interceptor_t *pit, pt_interceptor_ele_t **eleDest,char *class_name, char *function_name)
+zend_bool pt_intercept_hit(pt_interceptor_t *pit, pt_interceptor_ele_t **eleDest, char *class_name, char *function_name)
 {
     pt_interceptor_ele_t *ele;
     /*

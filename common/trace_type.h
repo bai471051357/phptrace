@@ -77,11 +77,18 @@ if (len) { \
 
 
 typedef struct {
+
+    /* origin data */
+    zend_bool internal;
+    zend_execute_data *caller;
+    zend_execute_data *ex;
+    zend_op_array *op_array;
+
     uint8_t type;               /* frame type, entry or exit */
     uint8_t functype;           /* function flags of PT_FUNC_xxx */
 
-    uint32_t lineno;            /* entry lineno */
-    sds filename;               /* entry filename */
+    //uint32_t lineno;          /* entry lineno */
+    //sds filename;             /* entry filename */
     sds class;                  /* class name */
     sds function;               /* function name */
     uint32_t level;             /* nesting level */
@@ -98,6 +105,7 @@ typedef struct {
 #else
     zval *ori_args;             /* origin args */
 #endif
+
     int64_t entry_time;         /* entry wall time */ 
     int64_t exit_time;          /* exit wall time */
     zval *object;               /* object */

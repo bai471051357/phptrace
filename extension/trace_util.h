@@ -33,7 +33,11 @@
 #define CHAIN_REC_SAMPLED CHAIN_REC_HEADER_PREFIX"SAMPLED"
 #define CHAIN_REC_FLAGS CHAIN_REC_HEADER_PREFIX"FLAGS"
 
+#ifdef CHAIN_DEBUG
 #define CHAIN_ERROR(format, ...) fprintf(stderr, "[PHPCHAIN] [file:%s] [line:%d]" format "\n", __FILE__, __LINE__, ##__VA_ARGS__)
+#else
+#define CHAIN_ERROR(format, ...)
+#endif
 
 uint64_t rand_uint64(void);
 void b2hex(char **output, const unsigned char *input, int input_len);

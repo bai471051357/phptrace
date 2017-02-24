@@ -108,7 +108,7 @@ static void pt_obtain_local_ip(pt_chain_header_t *pch)
 
     status = getifaddrs(&myaddrs); 
     if (status != 0) {
-        //todo log 
+        CHAIN_ERROR("getifaddr error");
         return;
     }
 
@@ -220,9 +220,27 @@ void pt_build_chain_header(pt_chain_t *pct)
         //}
     }
 
-    /* todo control sampled */
     if (!pch->sampled->val) {
-        pch->sampled->val = estrdup("true");
+        //struct timeval tv;
+        //int seed = gettimeofday(&tv, NULL) == 0 ? tv.tv_usec * getpid() : getpid();
+        //srandom(seed);
+        //int rand = random()%5; 
+        //
+        //todo dynamic sample algorithm 
+        int rand = 1;
+        if (rand == 1) {
+            pch->sampled->val = estrdup("true");
+            pch->is_sampled = 1;
+        } else {
+            pch->sampled->val = estrdup("false");
+            pch->is_sampled = 0;
+        }
+    } else {
+        if (strncmp(pch->sampled->val, "true", 4) == 0) {
+            pch->is_sampled = 1;
+        } else {
+            pch->is_sampled = 0;
+        }
     }
 
     if (!pch->flags->val) {
@@ -343,7 +361,6 @@ void pt_chain_header_dtor(pt_chain_header_t *pch)
 void pt_chain_ctor(pt_chain_t *pct, pt_chain_log_t *pcl, char *service_name)
 {
     pct->pcl = pcl;
-    //pt_intercept_ctor(&(pct->pit), pct);    
 
     /* service name */
     pct->service_name = service_name;
@@ -404,38 +421,39 @@ void pt_chain_dtor(pt_chain_t *pct)
     pct->execute_end_time = pt_time_usec();
 
     /* add main span */
-    zval *span;
-    if (pct->method == NULL) {
-        build_main_span(&span, pct->pch.trace_id->val, (char *)pct->sapi, pct->pch.span_id->val, pct->pch.parent_span_id->val, pct->execute_begin_time, pct->execute_end_time - pct->execute_begin_time); 
-    } else {
-        build_main_span(&span, pct->pch.trace_id->val, (char *)pct->method, pct->pch.span_id->val, pct->pch.parent_span_id->val, pct->execute_begin_time, pct->execute_end_time - pct->execute_begin_time); 
-    }
-    add_span_annotation(span, "sr", pct->execute_begin_time, pct->service_name,  pct->pch.ip, pct->pch.port);   
-    add_span_annotation(span, "ss", pct->execute_end_time, pct->service_name,  pct->pch.ip, pct->pch.port);   
-
-    if (pct->request_uri != NULL) {
-        add_span_bannotation(span, "http.url", pct->request_uri, pct->service_name, pct->pch.ip, pct->pch.port);
-    }
-
-    if (pct->script != NULL) {
-        add_span_bannotation(span, "script", pct->script, pct->service_name, pct->pch.ip, pct->pch.port);
-        efree(pct->script);
-    }
-
-    if (pct->is_cli == 1 && pct->argc > 1) {
-        int i = 1;
-        char argv[1024];
-        bzero(argv, 1024);
-        for(;i < pct->argc; i++) {
-            strcat(argv, pct->argv[i]);
-            strcat(argv, ",");
+    if (pct->pch.is_sampled == 1) {
+        zval *span;
+        if (pct->method == NULL) {
+            build_main_span(&span, pct->pch.trace_id->val, (char *)pct->sapi, pct->pch.span_id->val, pct->pch.parent_span_id->val, pct->execute_begin_time, pct->execute_end_time - pct->execute_begin_time); 
+        } else {
+            build_main_span(&span, pct->pch.trace_id->val, (char *)pct->method, pct->pch.span_id->val, pct->pch.parent_span_id->val, pct->execute_begin_time, pct->execute_end_time - pct->execute_begin_time); 
         }
-        argv[1023] = '\0';
-        add_span_bannotation(span, "argv", argv, pct->service_name, pct->pch.ip, pct->pch.port);
+        add_span_annotation(span, "sr", pct->execute_begin_time, pct->service_name,  pct->pch.ip, pct->pch.port);   
+        add_span_annotation(span, "ss", pct->execute_end_time, pct->service_name,  pct->pch.ip, pct->pch.port);   
+
+        if (pct->request_uri != NULL) {
+            add_span_bannotation(span, "http.url", pct->request_uri, pct->service_name, pct->pch.ip, pct->pch.port);
+        }
+
+        if (pct->script != NULL) {
+            add_span_bannotation(span, "script", pct->script, pct->service_name, pct->pch.ip, pct->pch.port);
+            efree(pct->script);
+        }
+
+        if (pct->is_cli == 1 && pct->argc > 1) {
+            int i = 1;
+            char argv[1024];
+            bzero(argv, 1024);
+            for(;i < pct->argc; i++) {
+                strcat(argv, pct->argv[i]);
+                strcat(argv, ",");
+            }
+            argv[1023] = '\0';
+            add_span_bannotation(span, "argv", argv, pct->service_name, pct->pch.ip, pct->pch.port);
+        }
+
+        pt_chain_add_span(pct->pcl, span);
     }
-
-
-    pt_chain_add_span(pct->pcl, span);
 
     /* header dtor */
     pt_chain_header_dtor(&(pct->pch));

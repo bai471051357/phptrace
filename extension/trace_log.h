@@ -32,7 +32,7 @@
 #define PATH_MAX 4096 
 #endif
 
-#define ALLOC_LOG_SIZE  1024
+#define ALLOC_LOG_SIZE  1024 * 1024
 #define DEFAULT_LOG_DIR "/var/wd/log/chain/"
 #define DEFAULT_PATH    DEFAULT_LOG_DIR"trace_chain"
 #define LOG_FORMAT      "%Y%m%d%H" 
@@ -45,6 +45,7 @@ typedef struct {
     char *buf;
     uint64_t total_size;
     uint64_t alloc_size;
+    uint64_t max_size;
     zval *spans;
 } pt_chain_log_t;
 

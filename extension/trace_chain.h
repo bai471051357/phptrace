@@ -54,6 +54,7 @@ typedef struct {
     pt_chain_key_t *flags;              /* flags */
     HashTable *chain_header_key;        /* chain uri key*/
     zend_bool is_load_header;           /* load_header */
+    zend_bool is_sampled;
 
     char ip[INET_ADDRSTRLEN];           /* device ip */
     int port;

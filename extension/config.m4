@@ -1,11 +1,5 @@
-PHP_ARG_ENABLE(trace, whether to enable trace support,
-[  --enable-trace          Enable trace support])
-
-PHP_ARG_ENABLE(chain, whether to enable chain support,
-[  --enable-chain          Enable chain support], no, no)
-
-PHP_ARG_WITH(curl_header, whether to enable curl support,
-[  --with-curl-header      With php curl support])
+PHP_ARG_ENABLE(tracing, whether to enable trace support,
+[  --enable-tracing          Enable trace support])
 
 if test "$PHP_TRACE" != "no"; then
 
@@ -37,22 +31,10 @@ if test "$PHP_TRACE" != "no"; then
         trace_intercept.c \
         trace_util.c \
         trace_chain.c"
-
-      dnl AC_MSG_CHECKING([Check curl header])
-      dnl if test "$PHP_CURL_HEADER" != "no"; then
-      dnl     if test -f "$PHP_CURL_HEADER/php_curl.h"; then
-      dnl        PHP_ADD_INCLUDE($PHP_CURL_HEADER)
-      dnl        AC_DEFINE(WITH_CURL_HEADER,1,[Include curl])
-      dnl     else 
-      dnl        AC_MSG_ERROR([PHP curl dir error])
-      dnl     fi
-      dnl else
-      dnl     AC_MSG_ERROR([Trace chain must build with curl])
-      dnl fi
   fi
 
   dnl $ext_srcdir available after PHP_NEW_EXTENSION
-  PHP_NEW_EXTENSION(trace, $PHP_TRACE_SOURCE_FILES, $ext_shared)
+  PHP_NEW_EXTENSION(tracing, $PHP_TRACE_SOURCE_FILES, $ext_shared)
 
   dnl configure can't use ".." as a source filename, so we make a link here
   ln -sf $ext_srcdir/../common $ext_srcdir
