@@ -394,7 +394,7 @@ static void add_chain_header(pt_interceptor_t *pit, zval *curl_resource, pt_fram
         array_init(option);
         is_init = 1;
     }
-    build_http_header(pit->pct, option, frame->span_id);
+    build_http_header(pit->pct, option, frame->span_id, pit->pct->pch.span_id->val);
     
     zval func;
     zval *argv[3];

@@ -95,6 +95,6 @@ typedef struct pt_chain_st {
 void pt_chain_ctor(pt_chain_t *pct, pt_chain_log_t *pcl, char *service_name);
 void pt_chain_dtor(pt_chain_t *pct);
 char *pt_rebuild_url(pt_chain_t *pct, char *ori_url);
-void build_http_header(pt_chain_t *pct, zval *header, char *span_id);
+void build_http_header(pt_chain_t *pct, zval *header, char *span_id, char *parent_span_id);
 void pt_build_chain_header(pt_chain_t *pct);
 #endif

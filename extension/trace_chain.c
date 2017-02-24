@@ -233,7 +233,7 @@ void pt_build_chain_header(pt_chain_t *pct)
 }
 
 /* add http header */
-void build_http_header(pt_chain_t *pct, zval *header, char *span_id)
+void build_http_header(pt_chain_t *pct, zval *header, char *span_id, char *parent_span_id)
 {
     pt_chain_key_t *pck = NULL;
     if (Z_TYPE_P(header) == IS_ARRAY) {
@@ -250,9 +250,11 @@ void build_http_header(pt_chain_t *pct, zval *header, char *span_id)
                 char *pass_value;
                 int value_size;
                 char *value;
-                if (span_id != NULL && strcmp(pck->name, "span_id") == 0) {
+                if (strncmp(pck->name, "span_id", sizeof("span_id") - 1) == 0 && span_id != NULL) {
                     value = span_id;
-                } else {
+                } else if (strncmp(pck->name, "parent_span_id", sizeof("parent_span_id") - 1) == 0 && parent_span_id != NULL) {
+                    value = parent_span_id;
+                }else {
                     value = pck->val;
                 }
                 value_size = strlen(pck->pass_key) + sizeof(": ") - 1 + strlen(value) + 1;
@@ -287,8 +289,8 @@ void pt_init_chain_header(pt_chain_header_t *pch)
     /* span id */
     pt_chain_key_t *span_id = (pt_chain_key_t *)emalloc(sizeof(pt_chain_key_t));
     span_id->name = "span_id";
-    span_id->receive_key = "none";
-    span_id->receive_key_len = sizeof("none");
+    span_id->receive_key = CHAIN_REC_SPAN_ID;
+    span_id->receive_key_len = sizeof(CHAIN_REC_SPAN_ID);
     span_id->pass_key = CHAIN_HEADER_SPAN_ID;
     span_id->is_pass = 1;
     span_id->val = NULL;
@@ -297,10 +299,10 @@ void pt_init_chain_header(pt_chain_header_t *pch)
     /* parent_span_id */
     pt_chain_key_t *parent_span_id = (pt_chain_key_t *)emalloc(sizeof(pt_chain_key_t));
     parent_span_id->name = "parent_span_id";
-    parent_span_id->receive_key = CHAIN_REC_SPAN_ID;
-    parent_span_id->receive_key_len = sizeof(CHAIN_REC_SPAN_ID);
-    parent_span_id->pass_key = "";
-    parent_span_id->is_pass = 0;
+    parent_span_id->receive_key = CHAIN_REC_PARENT_SPAN_ID;
+    parent_span_id->receive_key_len = sizeof(CHAIN_REC_PARENT_SPAN_ID);
+    parent_span_id->pass_key = CHAIN_HEADER_PARENT_SPAN_ID;
+    parent_span_id->is_pass = 1;
     parent_span_id->val = NULL;
     pch->parent_span_id = parent_span_id;
 
