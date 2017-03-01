@@ -161,6 +161,7 @@ static void retrive_header_data(void *data, void *arg)
         efree(hkey);
     }
 }
+
 static int find_server_var(char *key, int key_size, void **ret) 
 {
     if (PG(auto_globals_jit)) {
@@ -186,6 +187,16 @@ void pt_build_chain_header(pt_chain_t *pct)
     
     /* local ip */ 
     pt_obtain_local_ip(pch);
+
+    zval *server_addr;
+    if (find_server_var("SERVER_ADDR", sizeof("SERVER_ADDR"), &server_addr) == SUCCESS) {
+        strncpy(pch->ip, Z_STRVAL_P(server_addr), INET_ADDRSTRLEN);
+    }
+
+    zval *server_port;
+    if (find_server_var("SERVER_PORT", sizeof("SERVER_PORT"), &server_port) == SUCCESS) {
+        pch->port = atoi(Z_STRVAL_P(server_port));
+    }
 
     /* retrive key from header */
     if (pct->is_cli != 1) {
@@ -416,7 +427,23 @@ void pt_chain_dtor(pt_chain_t *pct)
     add_span_annotation(span, "ss", pct->execute_end_time, pct->service_name,  pct->pch.ip, pct->pch.port);   
 
     if (pct->request_uri != NULL) {
-        add_span_bannotation(span, "http.url", pct->request_uri, pct->service_name, pct->pch.ip, pct->pch.port);
+        zval *http_host = NULL;
+        find_server_var("HTTP_HOST", sizeof("HTTP_HOST"), &http_host);
+        /* can not find HTTP_HOST use SERVER_NAME */
+        if (http_host == NULL || strncmp(Z_STRVAL_P(http_host), "", 1) == 0) {
+            find_server_var("SERVER_NAME", sizeof("SERVER_NAME"), &http_host);
+        }
+
+        zval *request_uri = NULL;
+        find_server_var("REQUEST_URI", sizeof("REQUEST_URI"), &request_uri);
+        if (http_host != NULL && request_uri != NULL && PT_Z_TYPE_P(http_host) == IS_STRING && PT_Z_TYPE_P(request_uri) == IS_STRING) {
+            int url_len = Z_STRLEN_P(http_host) + Z_STRLEN_P(request_uri) + sizeof("http://") + 2;
+            char *url = emalloc(url_len);
+            memset(url, 0x00, url_len);
+            snprintf(url, url_len, "http://%s%s", Z_STRVAL_P(http_host), Z_STRVAL_P(request_uri));
+            add_span_bannotation(span, "http.url", url, pct->service_name, pct->pch.ip, pct->pch.port);
+            efree(url);
+        }
     }
 
     if (pct->script != NULL) {

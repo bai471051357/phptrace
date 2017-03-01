@@ -33,9 +33,9 @@
 #endif
 
 #define ALLOC_LOG_SIZE  1024
-#define DEFAULT_LOG_DIR "/var/wd/log/chain/"
-#define DEFAULT_PATH    DEFAULT_LOG_DIR"trace_chain"
-#define LOG_FORMAT      "%Y%m%d%H" 
+#define DEFAULT_LOG_DIR "/var/wd/log/tracing/php/"
+#define DEFAULT_PATH    DEFAULT_LOG_DIR"tracing"
+#define LOG_FORMAT      "%Y%m%d" 
 
 /* chain log */
 typedef struct {

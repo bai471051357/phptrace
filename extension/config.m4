@@ -1,4 +1,4 @@
-PHP_ARG_ENABLE(trace, whether to enable trace support,
+PHP_ARG_ENABLE(PTracing, whether to enable PTracing support,
 [  --enable-trace          Enable trace support])
 
 PHP_ARG_ENABLE(chain, whether to enable chain support,
@@ -52,7 +52,7 @@ if test "$PHP_TRACE" != "no"; then
   fi
 
   dnl $ext_srcdir available after PHP_NEW_EXTENSION
-  PHP_NEW_EXTENSION(trace, $PHP_TRACE_SOURCE_FILES, $ext_shared)
+  PHP_NEW_EXTENSION(ptracing, $PHP_TRACE_SOURCE_FILES, $ext_shared)
 
   dnl configure can't use ".." as a source filename, so we make a link here
   ln -sf $ext_srcdir/../common $ext_srcdir

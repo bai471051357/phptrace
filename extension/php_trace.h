@@ -17,15 +17,15 @@
 #ifndef PHP_TRACE_H
 #define PHP_TRACE_H
 
-extern zend_module_entry trace_module_entry;
-#define phpext_trace_ptr &trace_module_entry
+extern zend_module_entry ptracing_module_entry;
+#define phpext_trace_ptr &ptracing_module_entry
 
 #ifdef PHP_WIN32
-#   define PHP_TRACE_API __declspec(dllexport)
+#   define PHP_PTRACING_API __declspec(dllexport)
 #elif defined(__GNUC__) && __GNUC__ >= 4
-#   define PHP_TRACE_API __attribute__ ((visibility("default")))
+#   define PHP_PTRACING_API __attribute__ ((visibility("default")))
 #else
-#   define PHP_TRACE_API
+#   define PHP_PTRACING_API
 #endif
 
 #ifdef ZTS
@@ -43,17 +43,17 @@ extern zend_module_entry trace_module_entry;
 #include "trace_util.h"
 #endif
 
-PHP_MINIT_FUNCTION(trace);
-PHP_MSHUTDOWN_FUNCTION(trace);
-PHP_RINIT_FUNCTION(trace);
-PHP_RSHUTDOWN_FUNCTION(trace);
-PHP_MINFO_FUNCTION(trace);
+PHP_MINIT_FUNCTION(ptracing);
+PHP_MSHUTDOWN_FUNCTION(ptracing);
+PHP_RINIT_FUNCTION(ptracing);
+PHP_RSHUTDOWN_FUNCTION(ptracing);
+PHP_MINFO_FUNCTION(ptracing);
 
 /**
  * Declare any global variables you may need between the BEGIN and END macros
  * here:
  */
-ZEND_BEGIN_MODULE_GLOBALS(trace)
+ZEND_BEGIN_MODULE_GLOBALS(ptracing)
     zend_bool               enable;
     long                    dotrace;            /* flags of trace */
 
@@ -82,30 +82,30 @@ ZEND_BEGIN_MODULE_GLOBALS(trace)
     pt_interceptor_t        pit;                /* chain intercept module */
     pt_chain_log_t          pcl;                /* chain log module */
 #endif
-ZEND_END_MODULE_GLOBALS(trace)
+ZEND_END_MODULE_GLOBALS(ptracing)
 
 
 #ifdef ZEND_ENGINE_3
     /* Always refer to the globals in your function as TRACE_G(variable). You are
      * encouraged to rename these macros something shorter, see examples in any
      * other php module directory. */
-    #define PTG(v) ZEND_MODULE_GLOBALS_ACCESSOR(trace, v)
+    #define PTG(v) ZEND_MODULE_GLOBALS_ACCESSOR(ptracing, v)
 
-    #if defined(ZTS) && defined(COMPILE_DL_TRACE)
+    #if defined(ZTS) && defined(COMPILE_DL_PTRACING)
     ZEND_TSRMLS_CACHE_EXTERN();
     #endif
 #else
     /* In every utility function you add that needs to use variables in
-     * php_trace_globals, call TSRMLS_FETCH(); after declaring other variables used
+     * php_ptracing_globals, call TSRMLS_FETCH(); after declaring other variables used
      * by that function, or better yet, pass in TSRMLS_CC after the last function
      * argument and declare your utility function with TSRMLS_DC after the last
      * declared argument.  Always refer to the globals in your function as
      * TRACE_G(variable).  You are encouraged to rename these macros something
      * shorter, see examples in any other php module directory. */
     #ifdef ZTS
-    #define PTG(v) TSRMG(trace_globals_id, zend_trace_globals *, v)
+    #define PTG(v) TSRMG(ptracing_globals_id, zend_ptracing_globals *, v)
     #else
-    #define PTG(v) (trace_globals.v)
+    #define PTG(v) (ptracing_globals.v)
     #endif
 #endif
 

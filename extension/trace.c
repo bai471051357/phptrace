@@ -90,7 +90,7 @@ PHP_FUNCTION(trace_set_filter);
 #endif
 
 #ifdef TRACE_CHAIN
-PHP_FUNCTION(trace_chain_truncate);
+PHP_FUNCTION(ptracing_chain_truncate);
 #endif
 
 static void frame_build(pt_frame_t *frame, zend_bool internal, unsigned char type, zend_execute_data *caller, zend_execute_data *ex, zend_op_array *op_array TSRMLS_DC);
@@ -133,7 +133,7 @@ static long filter_frame(zend_bool internal, zend_execute_data *ex, zend_op_arra
  * --------------------
  */
 
-ZEND_DECLARE_MODULE_GLOBALS(trace)
+ZEND_DECLARE_MODULE_GLOBALS(ptracing)
 
 /* Make sapi_module accessable */
 extern sapi_module_struct sapi_module;
@@ -142,7 +142,7 @@ extern sapi_module_struct sapi_module;
 static int le_trace;
 
 /* Every user visible function must have an entry in trace_functions[]. */
-const zend_function_entry trace_functions[] = {
+const zend_function_entry ptracing_functions[] = {
 #if TRACE_DEBUG
     PHP_FE(trace_start, NULL)
     PHP_FE(trace_end, NULL)
@@ -151,7 +151,7 @@ const zend_function_entry trace_functions[] = {
     PHP_FE(trace_set_filter, trace_set_filter_arginfo)
 #endif
 #ifdef TRACE_CHAIN
-    PHP_FE(trace_chain_truncate, NULL)
+    PHP_FE(ptracing_chain_truncate, NULL)
 #endif
 #ifdef PHP_FE_END
     PHP_FE_END  /* Must be the last line in trace_functions[] */
@@ -160,45 +160,45 @@ const zend_function_entry trace_functions[] = {
 #endif
 };
 
-zend_module_entry trace_module_entry = {
+zend_module_entry ptracing_module_entry = {
 #if ZEND_MODULE_API_NO >= 20010901
     STANDARD_MODULE_HEADER,
 #endif
-    "trace",
-    trace_functions,
-    PHP_MINIT(trace),
-    PHP_MSHUTDOWN(trace),
-    PHP_RINIT(trace),
-    PHP_RSHUTDOWN(trace),
-    PHP_MINFO(trace),
+    "PTracing",
+    ptracing_functions,
+    PHP_MINIT(ptracing),
+    PHP_MSHUTDOWN(ptracing),
+    PHP_RINIT(ptracing),
+    PHP_RSHUTDOWN(ptracing),
+    PHP_MINFO(ptracing),
 #if ZEND_MODULE_API_NO >= 20010901
     TRACE_EXT_VERSION,
 #endif
     STANDARD_MODULE_PROPERTIES
 };
 
-#if PHP_VERSION_ID >= 70000 && defined(COMPILE_DL_TRACE) && defined(ZTS)
+#if PHP_VERSION_ID >= 70000 && defined(COMPILE_DL_PTRACING) && defined(ZTS)
 ZEND_TSRMLS_CACHE_DEFINE();
 #endif
 
-#ifdef COMPILE_DL_TRACE
-ZEND_GET_MODULE(trace)
+#ifdef COMPILE_DL_PTRACING
+ZEND_GET_MODULE(ptracing)
 #endif
 
 /* PHP_INI */
 PHP_INI_BEGIN()
-    STD_PHP_INI_ENTRY("trace.enable",    "1",    PHP_INI_SYSTEM, OnUpdateBool, enable, zend_trace_globals, trace_globals)
-    STD_PHP_INI_ENTRY("trace.dotrace",   "0",    PHP_INI_SYSTEM, OnUpdateLong, dotrace, zend_trace_globals, trace_globals)
-    STD_PHP_INI_ENTRY("trace.data_dir",  "/tmp", PHP_INI_SYSTEM, OnUpdateString, data_dir, zend_trace_globals, trace_globals)
+    STD_PHP_INI_ENTRY("ptracing.enable",    "0",    PHP_INI_SYSTEM, OnUpdateBool, enable, zend_ptracing_globals, ptracing_globals)
+    STD_PHP_INI_ENTRY("ptracing.dotrace",   "0",    PHP_INI_SYSTEM, OnUpdateLong, dotrace, zend_ptracing_globals, ptracing_globals)
+    STD_PHP_INI_ENTRY("ptracing.data_dir",  "/tmp", PHP_INI_SYSTEM, OnUpdateString, data_dir, zend_ptracing_globals, ptracing_globals)
 
 #ifdef TRACE_CHAIN
-    STD_PHP_INI_ENTRY("trace.chain_log_path",  DEFAULT_PATH, PHP_INI_SYSTEM, OnUpdateString, chain_log_path, zend_trace_globals, trace_globals)
-    STD_PHP_INI_ENTRY("trace.service_name",  "default", PHP_INI_SYSTEM, OnUpdateString, service_name, zend_trace_globals, trace_globals)
+    STD_PHP_INI_ENTRY("ptracing.chain_log_path",  DEFAULT_PATH, PHP_INI_SYSTEM, OnUpdateString, chain_log_path, zend_ptracing_globals, ptracing_globals)
+    STD_PHP_INI_ENTRY("ptracing.service_name",  "default", PHP_INI_SYSTEM, OnUpdateString, service_name, zend_ptracing_globals, ptracing_globals)
 #endif
 PHP_INI_END()
 
 /* php_trace_init_globals */
-static void php_trace_init_globals(zend_trace_globals *ptg)
+static void php_trace_init_globals(zend_ptracing_globals *ptg)
 {
     ptg->enable = ptg->dotrace = 0;
     ptg->data_dir = NULL;
@@ -224,14 +224,18 @@ static void php_trace_init_globals(zend_trace_globals *ptg)
  * PHP Extension Function
  * --------------------
  */
-PHP_MINIT_FUNCTION(trace)
+PHP_MINIT_FUNCTION(ptracing)
 {
-    ZEND_INIT_MODULE_GLOBALS(trace, php_trace_init_globals, NULL);
+    ZEND_INIT_MODULE_GLOBALS(ptracing, php_trace_init_globals, NULL);
     REGISTER_INI_ENTRIES();
 
     if (!PTG(enable)) {
         return SUCCESS;
     }
+
+#ifdef TRACE_CHAIN
+
+#endif
 
     /* Replace executor */
 #if PHP_VERSION_ID < 50500
@@ -289,7 +293,7 @@ PHP_MINIT_FUNCTION(trace)
     return SUCCESS;
 }
 
-PHP_MSHUTDOWN_FUNCTION(trace)
+PHP_MSHUTDOWN_FUNCTION(ptracing)
 {
     UNREGISTER_INI_ENTRIES();
 
@@ -332,9 +336,9 @@ PHP_MSHUTDOWN_FUNCTION(trace)
     return SUCCESS;
 }
 
-PHP_RINIT_FUNCTION(trace)
+PHP_RINIT_FUNCTION(ptracing)
 {
-#if PHP_VERSION_ID >= 70000 && defined(COMPILE_DL_TRACE) && defined(ZTS)
+#if PHP_VERSION_ID >= 70000 && defined(COMPILE_DL_PTRACING) && defined(ZTS)
     ZEND_TSRMLS_CACHE_UPDATE();
 #endif
     if (!PTG(enable)) {
@@ -382,7 +386,7 @@ PHP_RINIT_FUNCTION(trace)
     return SUCCESS;
 }
 
-PHP_RSHUTDOWN_FUNCTION(trace)
+PHP_RSHUTDOWN_FUNCTION(ptracing)
 {
     if (!PTG(enable)) {
         return SUCCESS;
@@ -409,10 +413,10 @@ PHP_RSHUTDOWN_FUNCTION(trace)
     return SUCCESS;
 }
 
-PHP_MINFO_FUNCTION(trace)
+PHP_MINFO_FUNCTION(ptracing)
 {
     php_info_print_table_start();
-    php_info_print_table_header(2, "trace support", "enabled");
+    php_info_print_table_header(2, "ptracing support", "enabled");
     php_info_print_table_end();
 
     DISPLAY_INI_ENTRIES();
@@ -599,7 +603,7 @@ PHP_FUNCTION(trace_set_filter)
 #endif
 
 #ifdef TRACE_CHAIN
-PHP_FUNCTION(trace_chain_truncate)
+PHP_FUNCTION(ptracing_chain_truncate)
 {      
     /* dtor and flush log */
     pt_chain_dtor(&PTG(pct));
