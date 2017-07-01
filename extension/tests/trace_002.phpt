@@ -13,9 +13,9 @@ require      'trace_002_require.inc';
 include      'trace_002_include.inc';
 
 // Lambda
-$f = create_function('', 'return 0;');
+$f = @create_function('', 'return 0;');
 $f();
-$g = create_function('', 'return 1;');
+$g = @create_function('', 'return 1;');
 $g();
 
 // Variable function
